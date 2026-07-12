@@ -7,13 +7,14 @@ backend/                  FastAPI, SQLite repository, workflow adapter, tests
 src/                      React application and Konva canvas
 public/demo/              Browser demonstration assets
 .agents/skills/           Bundled product-image Skill and its tests
-原始商品图/                Product source workspace
-配件超市/                  Accessory source workspace
-组合/                      Prepared tasks, curated references, formal outputs
+workspace/                Runtime product workspace
+  原始商品图/              Product sources
+  配件超市/                Accessory sources
+  组合/                    Prepared tasks, curated references, formal outputs
 docs/                     Product and technical documentation
 ```
 
-Runtime artifacts such as `.env`, `.venv`, `dist`, `.museforge/runs`, SQLite files, Python caches, and generated output PNGs are ignored by Git.
+Runtime artifacts such as `.env`, `.venv`, `dist`, `workspace/.museforge/runs`, SQLite files, Python caches, and generated outputs are ignored by Git.
 
 ## 2. Local environment
 
@@ -42,7 +43,7 @@ npm run dev:ui
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MUSEFORGE_ENABLE_LIVE_GENERATION` | `false` | Explicit live image-call gate |
-| `MUSEFORGE_WORKSPACE_ROOT` | repository root | Product workspace root |
+| `MUSEFORGE_WORKSPACE_ROOT` | `./workspace` | Product workspace root |
 | `MUSEFORGE_DB_PATH` | `backend/data/museforge.sqlite3` | Runtime database |
 | `MUSEFORGE_WORKFLOW_SCRIPT` | bundled Skill entrypoint | Reviewed workflow executable |
 | `MUSEFORGE_WORKFLOW_TIMEOUT_SECONDS` | `3600` | Run timeout, clamped to 10–21600 seconds |

@@ -5,7 +5,7 @@ description: Scan complete product folders containing source images, description
 
 # Generate Product Images
 
-Operate from the workspace containing `原始商品图`, `配件超市`, `组合`, and `.env`.
+Resolve the product workspace from `MUSEFORGE_WORKSPACE_ROOT` when set. In MuseForge the default is `workspace/`; a legacy layout with `原始商品图`, `配件超市`, and `组合` directly beside the project is also accepted. Provider secrets remain in the project `.env`, outside product data.
 
 ## Workflow
 

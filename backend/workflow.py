@@ -189,10 +189,14 @@ class WorkflowRunner:
         job = repository.create_job(action=action, request=request, command=command)
         repository.mark_job_running(job["id"])
         try:
+            process_env = os.environ.copy()
+            process_env["MUSEFORGE_WORKSPACE_ROOT"] = str(
+                self.settings.workspace_root.resolve()
+            )
             completed = subprocess.run(
                 command,
                 cwd=self.settings.workspace_root,
-                env=os.environ.copy(),
+                env=process_env,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -408,6 +412,7 @@ class WorkflowRunner:
         env.update(
             {
                 "PYTHONUNBUFFERED": "1",
+                "MUSEFORGE_WORKSPACE_ROOT": str(workspace_root),
                 "MUSEFORGE_RUN_ID": job_id,
                 "MUSEFORGE_RUN_DIR": str(run_dir),
                 "MUSEFORGE_VARIANTS": str(int(request.get("variants") or 1)),

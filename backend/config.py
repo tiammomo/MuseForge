@@ -35,29 +35,30 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        default_workspace = Path(__file__).resolve().parents[1]
+        project_root = Path(__file__).resolve().parents[1]
+        default_workspace = project_root / "workspace"
         # Local secrets and the explicit live-generation gate are optional. Shell
         # environment variables keep precedence over values in the project file.
-        load_dotenv(default_workspace / ".env", override=False)
+        load_dotenv(project_root / ".env", override=False)
         workspace = _path_from_env(
             "MUSEFORGE_WORKSPACE_ROOT",
             default_workspace,
-            relative_to=default_workspace,
+            relative_to=project_root,
         )
         database = _path_from_env(
             "MUSEFORGE_DB_PATH",
             Path(__file__).resolve().parent / "data" / "museforge.sqlite3",
-            relative_to=workspace,
+            relative_to=project_root,
         )
         workflow = _path_from_env(
             "MUSEFORGE_WORKFLOW_SCRIPT",
-            workspace
+            project_root
             / ".agents"
             / "skills"
             / "generate-product-images"
             / "scripts"
             / "product_image_workflow.py",
-            relative_to=workspace,
+            relative_to=project_root,
         )
         raw_timeout = os.getenv("MUSEFORGE_WORKFLOW_TIMEOUT_SECONDS", "3600")
         try:

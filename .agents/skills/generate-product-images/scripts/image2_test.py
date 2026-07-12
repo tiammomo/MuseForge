@@ -15,14 +15,38 @@ import requests
 
 
 def find_workspace_root() -> Path:
+    configured = os.getenv("MUSEFORGE_WORKSPACE_ROOT", "").strip()
+    if configured:
+        candidate = Path(configured).expanduser().resolve()
+        if (candidate / "原始商品图").is_dir() and (candidate / "配件超市").is_dir():
+            return candidate
+        raise RuntimeError(
+            f"MUSEFORGE_WORKSPACE_ROOT does not contain 原始商品图 and 配件超市: {candidate}"
+        )
     for candidate in Path(__file__).resolve().parents:
         if (candidate / "原始商品图").is_dir() and (candidate / "配件超市").is_dir():
             return candidate
+        nested = candidate / "workspace"
+        if (nested / "原始商品图").is_dir() and (nested / "配件超市").is_dir():
+            return nested
     raise RuntimeError("Could not locate workspace containing 原始商品图 and 配件超市")
 
 
 ROOT = find_workspace_root()
 LOG_PATH = ROOT / ".tmp" / "image2_cost_log.jsonl"
+
+
+def find_env_path() -> Path:
+    configured = os.getenv("MUSEFORGE_ENV_FILE", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    for candidate in (ROOT / ".env", ROOT.parent / ".env"):
+        if candidate.is_file():
+            return candidate
+    return ROOT / ".env"
+
+
+ENV_PATH = find_env_path()
 
 
 def load_mixed_env(path: Path) -> None:
@@ -168,7 +192,7 @@ def write_cost_log(record: dict[str, Any]) -> None:
 
 
 def run_test() -> Path:
-    load_mixed_env(ROOT / ".env")
+    load_mixed_env(ENV_PATH)
 
     combo_rel = os.getenv("IMAGE_TEST_COMBO", "组合/ZJJMT009/25-25毛巾")
     combo_dir = (ROOT / combo_rel).resolve()

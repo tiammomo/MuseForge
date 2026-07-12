@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from image2_combo_batch import image_output_format, request_image
-from image2_test import ROOT, load_mixed_env, parse_bool, read_prompt_objects, reference_images
+from image2_test import ENV_PATH, ROOT, load_mixed_env, parse_bool, read_prompt_objects, reference_images
 
 
 SOURCE_ROOT = ROOT / "原始商品图"
@@ -1067,7 +1067,7 @@ def generate(jobs: list[GenerationJob], concurrency: int) -> None:
 
 def main() -> None:
     args = parse_args()
-    load_mixed_env(ROOT / ".env")
+    load_mixed_env(ENV_PATH)
     product_dirs = products(args.product)
     if args.combinations_only and args.variants_only:
         raise ValueError("--combinations-only and --variants-only are mutually exclusive")

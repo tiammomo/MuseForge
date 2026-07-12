@@ -15,6 +15,7 @@ from typing import Any
 import requests
 
 from image2_test import (
+    ENV_PATH,
     ROOT,
     LOG_PATH,
     auth_headers,
@@ -393,7 +394,7 @@ def run_one_combo(combo_dir: Path, max_workers: int) -> list[dict[str, Any]]:
 
 
 def run_batches(args: argparse.Namespace) -> list[dict[str, Any]]:
-    load_mixed_env(ROOT / ".env")
+    load_mixed_env(ENV_PATH)
     if args.overwrite:
         os.environ["IMAGE_OVERWRITE"] = "true"
 

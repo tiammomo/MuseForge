@@ -48,9 +48,9 @@ The built-in e-commerce matrix covers:
 - Product/task/shot matrix with readiness checks and blocked-item prevention.
 - Asynchronous generation runs backed by FastAPI and SQLite.
 - Structured workflow events and browser polling for real progress visibility.
-- Run-level candidate staging under `.museforge/runs/`.
+- Run-level candidate staging under `workspace/.museforge/runs/`.
 - Four-up candidate review, multi-select keep, and confirmed cleanup of rejected images.
-- Atomic promotion of kept candidates into the formal `组合/` workspace.
+- Atomic promotion of kept candidates into the formal `workspace/组合/` library.
 - Stable formal-asset URLs when a selected result is sent to the canvas.
 
 ### Skill integration
@@ -119,24 +119,12 @@ If the API is unavailable, the browser enters a clearly labeled demonstration mo
 
 ```text
 MuseForge/
-├── 原始商品图/
-│   └── <product>/
-│       ├── product images
-│       └── product description files
-├── 配件超市/
-│   └── <accessory>/
-│       ├── accessory images
-│       └── accessory description files
-├── 组合/
-│   └── <product>/
-│       └── <standalone-or-accessory-task>/
-│           ├── prompts.json
-│           ├── prompts.md
-│           ├── reference_manifest.json
-│           ├── 参考图/
-│           └── 主图|尺寸图|场景图|细节图|对比图/
 ├── .agents/skills/generate-product-images/
-├── .museforge/runs/                 # temporary generation candidates
+├── workspace/                       # runtime product data, separate from source
+│   ├── 原始商品图/<product>/
+│   ├── 配件超市/<accessory>/
+│   ├── 组合/<product>/<task>/
+│   └── .museforge/runs/             # temporary generation candidates
 ├── backend/data/museforge.sqlite3   # runtime metadata, ignored by Git
 └── .env                             # local secrets, ignored by Git
 ```
@@ -186,11 +174,11 @@ Never place API keys in frontend source, canvas documents, prompt files, or comm
 Candidates are not formal assets when generated:
 
 ```text
-.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-XX.png
+workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-XX.png
 ```
 
 - `pending`: temporary local candidate, visible through its database ID.
-- `selected/promoted`: atomically moved into `组合/<product>/<task>/<中文图型>/`.
+- `selected/promoted`: atomically moved into `workspace/组合/<product>/<task>/<中文图型>/`.
 - deleted: candidate file and candidate row are removed; the minimal run audit event remains.
 
 This boundary lets the website visualize the production process while only retained images enter the long-lived asset workspace.

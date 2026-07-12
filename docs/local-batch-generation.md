@@ -24,24 +24,24 @@ The website stores run state, planned items, progress events, and review decisio
 For a product named `<product>`:
 
 ```text
-原始商品图/<product>/
+workspace/原始商品图/<product>/
   ├── product images
   └── description/specification files
 
-组合/<product>/单品/
+workspace/组合/<product>/单品/
   ├── prompts.json
   ├── prompts.md
   ├── reference_manifest.json
   └── 参考图/
 
-组合/<product>/<accessory>/
+workspace/组合/<product>/<accessory>/
   ├── prompts.json
   ├── prompts.md
   ├── reference_manifest.json
   └── 参考图/
 ```
 
-Accessory source material lives under `配件超市/<accessory>/`.
+Accessory source material lives under `workspace/配件超市/<accessory>/`.
 
 The Skill preparation phase creates task and prompt baselines. Reference curation remains an explicit publishing step because incorrect identity references can invalidate an entire batch.
 
@@ -139,8 +139,8 @@ The detail response includes persisted run data and structured events.
 Candidates never write directly into formal task output folders:
 
 ```text
-.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-01.png
-.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-02.png
+workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-01.png
+workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-02.png
 ...
 ```
 
@@ -187,7 +187,7 @@ Content-Type: application/json
 The server atomically promotes the file to:
 
 ```text
-组合/<product>/<task>/<中文图型>/<candidate-id>.<format>
+workspace/组合/<product>/<task>/<中文图型>/<candidate-id>.<format>
 ```
 
 The formal relative path becomes the candidate's stable workspace asset URL.

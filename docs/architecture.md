@@ -88,7 +88,7 @@ Load error and save error are distinct states. A load error blocks editing and a
 
 ### Settings
 
-`Settings.from_env()` resolves the workspace, database, Skill entrypoint, live-generation gate, and workflow timeout. A project `.env` is loaded with `override=False`, so explicitly exported shell variables keep precedence.
+`Settings.from_env()` resolves the product workspace, database, Skill entrypoint, live-generation gate, and workflow timeout. Product data defaults to the repository's `workspace/` directory, while the Skill remains project tooling under `.agents/`. A project `.env` is loaded with `override=False`, so explicitly exported shell variables keep precedence.
 
 ### Workspace scanner
 
@@ -148,7 +148,7 @@ The Skill emits line-delimited events prefixed with `MUSEFORGE_EVENT `. The adap
 Saved candidates must match exactly:
 
 ```text
-.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-XX.<format>
+workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-XX.<format>
 ```
 
 Paths, suffixes, candidate indices, task names, shot IDs, and run IDs are checked again at ingestion.

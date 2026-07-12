@@ -11,7 +11,7 @@ export const demoAssets: AssetItem[] = [
 ]
 
 export const demoWorkspace: WorkspaceSnapshot = {
-  root: '/home/tiammomo/projects/dev/MuseForge',
+  root: './workspace',
   products: [
     {
       id: 'MF-DEMO-001',

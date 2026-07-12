@@ -103,7 +103,7 @@ export function AssetsPage() {
 
       {tab === 'assets' && (
         <section className="panel source-assets-panel">
-          <div className="panel-heading"><div><small>原始商品图 / MF-DEMO-001</small><h3>源素材与文档</h3></div><button className="button secondary"><ImagePlus size={15} />导入文件</button></div>
+          <div className="panel-heading"><div><small>workspace / 原始商品图 / MF-DEMO-001</small><h3>源素材与文档</h3></div><button className="button secondary"><ImagePlus size={15} />导入文件</button></div>
           <div className="source-file-grid">{demoAssets.slice(0, 4).map((asset) => <article key={asset.id}><img src={asset.url} alt={asset.name} /><div><FileImage size={15} /><p><strong>{asset.name}</strong><small>{asset.dimensions} · PNG</small></p><MoreHorizontal size={16} /></div></article>)}<article className="document-card"><div className="document-icon"><FileText size={28} /></div><div><FileText size={15} /><p><strong>商品说明.md</strong><small>1.8 KB · UTF-8</small></p><MoreHorizontal size={16} /></div></article></div>
         </section>
       )}

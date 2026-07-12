@@ -128,7 +128,7 @@ Blocked matrix cells cannot be submitted as part of a batch.
 
 ## 8. Review semantics
 
-Generated images enter a temporary run directory first. Review decisions change storage state:
+Generated images enter `workspace/.museforge/runs/` first. Review decisions change storage state:
 
 ```text
 generated candidate
