@@ -1,0 +1,117 @@
+.studio-page .prompt-fields textarea,
+.studio-page .prompt-fields input,
+.studio-page .property-label textarea,
+.studio-page .property-grid input,
+.studio-page .advanced-grid select {
+  font-size: 13px;
+}
+
+.studio-page .floating-toolbar {
+  height: 45px;
+  padding: 5px;
+}
+
+.studio-page .floating-toolbar button {
+  width: 35px;
+  height: 34px;
+}
+
+.studio-page .autosave.dirty i,
+.studio-page .autosave.saving i,
+.studio-page .autosave.loading i {
+  background: #d09548;
+  animation: pulse 1s infinite;
+}
+
+.studio-page .autosave.load-error,
+.studio-page .autosave.save-error {
+  color: #a05249;
+}
+
+.studio-page .autosave.load-error i,
+.studio-page .autosave.save-error i {
+  background: #c76155;
+}
+
+.studio-page .layer-actions {
+  margin-top: 8px;
+}
+
+.studio-page .layer-actions > div:last-child {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.studio-page .layer-actions .row-action {
+  height: 36px;
+  padding: 0 9px;
+  background: #f4f3ef;
+  border: 1px solid #e2e3dd;
+}
+
+.studio-page .version-note {
+  margin: 12px 4px 0;
+  color: #888d87;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.studio-page .generate-footer > small {
+  font-size: 11px;
+}
+
+.studio-page .canvas-hint {
+  padding: 6px 9px;
+  background: rgba(245, 244, 240, .88);
+  border: 1px solid rgba(215, 217, 211, .9);
+  border-radius: 7px;
+  backdrop-filter: blur(7px);
+}
+
+.studio-page .canvas-load-blocker {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(245, 244, 240, .76);
+  backdrop-filter: blur(5px);
+}
+
+.studio-page .studio-workspace {
+  position: relative;
+}
+
+.studio-page .canvas-load-blocker > div {
+  width: min(420px, calc(100% - 32px));
+  padding: 24px;
+  text-align: center;
+  background: #fffdfa;
+  border: 1px solid #dfd9d0;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(31, 39, 35, .14);
+}
+
+.studio-page .canvas-load-blocker svg {
+  color: #a05249;
+}
+
+.studio-page .canvas-load-blocker strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 18px;
+}
+
+.studio-page .canvas-load-blocker p {
+  margin: 8px 0 16px;
+  color: #6d716c;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.studio-page .canvas-load-blocker button {
+  min-width: 132px;
+}
