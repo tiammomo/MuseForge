@@ -26,14 +26,23 @@ const statusMeta = {
 
 export function OverviewPage() {
   const workspace = useAppStore((state) => state.workspace) ?? demoWorkspace
+  const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date()).replace('星期', '，星期')
+  const promptCoverage = Math.min(100, Math.round((workspace.stats.prompts / Math.max(workspace.stats.tasks * 5, 1)) * 100))
+  const productOutputMax = Math.max(1, ...workspace.products.map((product) => product.outputCount))
+  const productOutputBars = workspace.products.slice(0, 7).map((product) => ({
+    id: product.id,
+    name: product.name,
+    count: product.outputCount,
+    height: product.outputCount ? Math.max(14, Math.round((product.outputCount / productOutputMax) * 100)) : 0,
+  }))
 
   return (
     <div className="overview-page">
       <section className="welcome-row">
         <div>
-          <p>7 月 12 日，星期日</p>
+          <p>{today}</p>
           <h2>把创意变成一套可交付的图。</h2>
-          <span>{workspace.stats.pendingReview} 张图片等待审核，2 个任务正在生成。</span>
+          <span>{workspace.stats.pendingReview} 张图片等待审核，{workspace.stats.tasks} 个生产任务已进入工作区。</span>
         </div>
         <div className="welcome-actions">
           <button className="button secondary"><FolderPlus size={17} />导入已有目录</button>
@@ -42,27 +51,36 @@ export function OverviewPage() {
       </section>
 
       <section className="metric-grid">
-        <article className="metric-card featured">
-          <div className="metric-icon"><WandSparkles size={20} /></div>
-          <div><small>今日生成</small><strong>42</strong><span>张候选图</span></div>
-          <em>+18%</em>
-          <div className="mini-bars" aria-hidden="true">{[32, 48, 39, 66, 52, 78, 92].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
-        </article>
-        <article className="metric-card">
-          <div className="metric-icon mint"><Images size={20} /></div>
-          <div><small>待审核</small><strong>{workspace.stats.pendingReview}</strong><span>张图片</span></div>
-          <Link to="/review">开始审核 <ArrowRight size={14} /></Link>
-        </article>
-        <article className="metric-card">
-          <div className="metric-icon sand"><FileStack size={20} /></div>
-          <div><small>活跃任务</small><strong>{workspace.stats.tasks}</strong><span>组任务</span></div>
-          <Link to="/matrix">查看矩阵 <ArrowRight size={14} /></Link>
-        </article>
-        <article className="metric-card">
-          <div className="metric-icon coral"><Sparkles size={20} /></div>
-          <div><small>一次通过率</small><strong>86<sup>%</sup></strong><span>近 30 天</span></div>
-          <span className="positive">质量稳定</span>
-        </article>
+        <Link className="metric-card featured" to="/assets">
+          <div className="metric-head">
+            <div className="metric-icon"><WandSparkles size={20} /></div>
+            <div className="metric-heading"><small>正式输出</small><span>已审核并保留的资产</span></div>
+            <em>本地资产库</em>
+          </div>
+          <div className="metric-body">
+            <div className="metric-value"><strong>{workspace.stats.outputs}</strong><span>张</span></div>
+            <div className="metric-product-bars" aria-label={`各商品正式输出：${productOutputBars.map((item) => `${item.name} ${item.count} 张`).join('，')}`}>
+              {productOutputBars.map((item) => <i key={item.id} title={`${item.name} · ${item.count} 张`} style={{ height: `${item.height}%` }} />)}
+            </div>
+          </div>
+          <div className="metric-footer"><span><i />覆盖 {workspace.stats.products} 个商品</span><strong>查看资产 <ArrowRight size={14} /></strong></div>
+        </Link>
+        <Link className="metric-card review" to="/review">
+          <div className="metric-head"><div className="metric-icon mint"><Images size={20} /></div><div className="metric-heading"><small>待审核</small><span>需要人工决策</span></div><em className={workspace.stats.pendingReview ? 'attention' : 'stable'}>{workspace.stats.pendingReview ? '待处理' : '已清空'}</em></div>
+          <div className="metric-body"><div className="metric-value"><strong>{workspace.stats.pendingReview}</strong><span>张候选图</span></div></div>
+          <div className="metric-footer"><span>{workspace.stats.pendingReview ? '保留满意结果，清理其余候选' : '当前没有积压'}</span><strong>开始审核 <ArrowRight size={14} /></strong></div>
+        </Link>
+        <Link className="metric-card tasks" to="/matrix">
+          <div className="metric-head"><div className="metric-icon sand"><FileStack size={20} /></div><div className="metric-heading"><small>生产任务</small><span>单品与配件组合</span></div><em>{workspace.stats.products} 商品</em></div>
+          <div className="metric-body"><div className="metric-value"><strong>{workspace.stats.tasks}</strong><span>组任务</span></div></div>
+          <div className="metric-footer"><span>按 5 类电商图型组织</span><strong>查看矩阵 <ArrowRight size={14} /></strong></div>
+        </Link>
+        <Link className="metric-card coverage" to="/matrix">
+          <div className="metric-head"><div className="metric-icon coral"><Sparkles size={20} /></div><div className="metric-heading"><small>Prompt 覆盖</small><span>结构化生成准备度</span></div><em className={promptCoverage === 100 ? 'stable' : 'attention'}>{promptCoverage === 100 ? '完整' : '待补充'}</em></div>
+          <div className="metric-body"><div className="metric-value"><strong>{promptCoverage}<sup>%</sup></strong><span>{workspace.stats.prompts} 份 Prompt</span></div></div>
+          <div className="metric-progress" aria-label={`Prompt 覆盖率 ${promptCoverage}%`}><i style={{ width: `${promptCoverage}%` }} /></div>
+          <div className="metric-footer"><span>{workspace.stats.tasks * 5} 个目标图型</span><strong>检查准备度 <ArrowRight size={14} /></strong></div>
+        </Link>
       </section>
 
       <section className="overview-columns">
