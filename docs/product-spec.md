@@ -151,7 +151,13 @@ Canvas documents are isolated by `product + task + shot` so different product wo
 Current interaction model:
 
 - image and text layers;
-- drag, resize, rotate, duplicate, delete, align, and layer ordering;
+- drag, resize, rotate, duplicate, delete, rename, visibility, locking, and layer ordering;
+- marquee selection and additive Shift/Ctrl/Command selection;
+- grouped movement and multi-node transforms;
+- smart snapping to artboard edges and center lines;
+- alignment to the artboard or current selection bounds, plus equal distribution for three or more nodes;
+- retained output history sourced from real promoted candidates;
+- direct local image import;
 - select and hand tools;
 - wheel zoom, fit view, and 100% view;
 - Space for temporary hand mode;
@@ -203,8 +209,8 @@ The current local-first release is successful when a user can:
 - manifest editing and publishing through the API;
 - run cancellation and retry controls;
 - persisted event timeline and worker diagnostics in the queue UI;
-- real selected-output history in the canvas asset panel;
-- multi-select, snapping, distribution, crop, mask, and visibility controls;
+- image crop/fit, masks, inline text editing, and reusable groups;
+- configurable rulers, grids, margins, bleed, and channel-safe areas;
 - marketplace and channel-specific artboard templates.
 
 ### Deployment evolution

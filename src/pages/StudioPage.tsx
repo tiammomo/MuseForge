@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlignCenter,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignEndHorizontal,
+  AlignStartVertical,
+  AlignEndVertical,
+  AlignVerticalDistributeCenter,
   ArrowDownToLine,
   Check,
   ChevronDown,
@@ -8,11 +14,13 @@ import {
   Copy,
   Download,
   Eye,
+  EyeOff,
   Grip,
   Hand,
   ImagePlus,
   Layers3,
   LockKeyhole,
+  LockOpen,
   Maximize2,
   Minus,
   MousePointer2,
@@ -31,7 +39,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { ARTBOARD, StudioCanvas, type CanvasViewport, type StudioCanvasHandle } from '../components/StudioCanvas'
 import { demoAssets } from '../lib/demo'
-import { createGenerationRun, loadCanvas, previewWorkflow, saveCanvas } from '../lib/api'
+import { createGenerationRun, listCandidates, loadCanvas, previewWorkflow, saveCanvas } from '../lib/api'
 import { useAppStore } from '../store/appStore'
 import type { AssetItem, CanvasNode, PromptDraft, ShotType } from '../types'
 import '../studio-enhancements.css'
@@ -129,10 +137,16 @@ function canvasDocumentId(product: string, task: string, shot: ShotType): string
 
 function initialNodes(shot: ShotType): CanvasNode[] {
   return [
-    { id: 'scene-background', type: 'image', src: outputByShot[shot], x: ARTBOARD.x, y: ARTBOARD.y, width: ARTBOARD.width, height: ARTBOARD.height },
-    { id: 'headline', type: 'text', text: 'HYDRATION, REIMAGINED.', x: 344, y: 184, width: 445, fontSize: 25, fontStyle: 'bold', fill: '#173f38' },
-    { id: 'subline', type: 'text', text: 'A quiet ritual for bright summer mornings', x: 347, y: 218, width: 360, fontSize: 13, fill: '#42665f' },
+    { id: 'scene-background', name: '画板底图', locked: true, type: 'image', src: outputByShot[shot], x: ARTBOARD.x, y: ARTBOARD.y, width: ARTBOARD.width, height: ARTBOARD.height },
+    { id: 'headline', name: '主标题', type: 'text', text: 'HYDRATION, REIMAGINED.', x: 344, y: 184, width: 445, fontSize: 25, fontStyle: 'bold', fill: '#173f38' },
+    { id: 'subline', name: '副标题', type: 'text', text: 'A quiet ritual for bright summer mornings', x: 347, y: 218, width: 360, fontSize: 13, fill: '#42665f' },
   ]
+}
+
+function nodeBounds(node: CanvasNode) {
+  const lineCount = node.type === 'text' ? Math.max(1, node.text.split('\n').length) : 1
+  const height = node.type === 'image' ? node.height : node.fontSize * 1.1 * lineCount
+  return { x: node.x, y: node.y, width: node.width, height, right: node.x + node.width, bottom: node.y + height }
 }
 
 function imageDimensions(src: string): Promise<{ width: number; height: number }> {
@@ -144,34 +158,92 @@ function imageDimensions(src: string): Promise<{ width: number; height: number }
   })
 }
 
-function AssetPanel({ onAdd }: { onAdd: (asset: AssetItem) => void }) {
-  const [tab, setTab] = useState<'assets' | 'reference' | 'history'>('assets')
-  const filtered = tab === 'assets' ? demoAssets.slice(0, 4) : tab === 'reference' ? demoAssets.slice(3) : demoAssets.slice(1, 4)
+function nodeLabel(node: CanvasNode): string {
+  if (node.name) return node.name
+  if (node.id === 'scene-background') return '画板底图'
+  if (node.type === 'text') return node.text.trim().slice(0, 24) || '文字图层'
+  return '图片图层'
+}
+
+function AssetPanel({
+  onAdd,
+  resultAssets,
+  nodes,
+  selectedIds,
+  onSelect,
+  onUpdateNode,
+  onMoveLayer,
+}: {
+  onAdd: (asset: AssetItem) => void
+  resultAssets: AssetItem[]
+  nodes: CanvasNode[]
+  selectedIds: string[]
+  onSelect: (id: string, additive?: boolean) => void
+  onUpdateNode: (id: string, patch: Partial<CanvasNode>) => void
+  onMoveLayer: (id: string, direction: 'up' | 'down') => void
+}) {
+  const [tab, setTab] = useState<'assets' | 'results' | 'layers'>('assets')
+  const [editingId, setEditingId] = useState<string>()
+  const [draftName, setDraftName] = useState('')
+  const filtered = tab === 'results' ? resultAssets : demoAssets
+
+  const importFile = (file?: File) => {
+    if (!file?.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => onAdd({ id: `local-${Date.now()}`, name: file.name, url: String(reader.result), kind: 'product' })
+    reader.readAsDataURL(file)
+  }
+
+  const finishRename = (node: CanvasNode) => {
+    const name = draftName.trim()
+    if (name && name !== nodeLabel(node)) onUpdateNode(node.id, { name })
+    setEditingId(undefined)
+  }
+
   return (
     <aside className="asset-panel">
       <div className="panel-tabs compact">
         <button className={tab === 'assets' ? 'active' : ''} onClick={() => setTab('assets')}>素材</button>
-        <button className={tab === 'reference' ? 'active' : ''} onClick={() => setTab('reference')}>参考</button>
-        <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>历史</button>
+        <button className={tab === 'results' ? 'active' : ''} onClick={() => setTab('results')}>结果</button>
+        <button className={tab === 'layers' ? 'active' : ''} onClick={() => setTab('layers')}>图层</button>
       </div>
-      <button className="upload-zone"><ImagePlus size={18} /><span><strong>导入素材</strong><small>拖入图片或点击选择</small></span></button>
-      <div className="asset-section-title"><span>{tab === 'history' ? '最近生成' : '项目素材'}</span><em>{filtered.length}</em></div>
-      <div className="asset-grid">
-        {filtered.map((asset) => (
-          <button key={asset.id} className="asset-tile" onClick={() => onAdd(asset)} title={`添加 ${asset.name}`}>
-            <img src={asset.url} alt={asset.name} />
-            <span className={`asset-kind ${asset.kind}`}>{asset.kind === 'product' ? '商品' : asset.kind === 'output' ? '输出' : asset.kind === 'scene' ? '场景' : '参考'}</span>
-            <small>{asset.name}</small>
-            <i><Plus size={13} /></i>
-          </button>
-        ))}
-      </div>
-      <div className="asset-section-title"><span>商品事实</span><LockKeyhole size={13} /></div>
-      <div className="fact-mini-card">
-        <strong>MF-DEMO-001</strong>
-        <p>透明喷雾瓶 · 深绿色泵头<br />完整单件 · 竖直独立摆放</p>
-        <button>查看 8 条证据 <Eye size={13} /></button>
-      </div>
+      {tab !== 'layers' ? (
+        <>
+          <label className="upload-zone"><ImagePlus size={18} /><span><strong>导入素材</strong><small>PNG / JPG / WebP</small></span><input type="file" accept="image/*" onChange={(event) => { importFile(event.target.files?.[0]); event.target.value = '' }} /></label>
+          <div className="asset-section-title"><span>{tab === 'results' ? '已保留结果' : '项目素材与参考'}</span><em>{filtered.length}</em></div>
+          {filtered.length ? <div className="asset-grid">
+            {filtered.map((asset) => (
+              <button key={asset.id} className="asset-tile" onClick={() => onAdd(asset)} title={`添加 ${asset.name}`}>
+                <img src={asset.url} alt={asset.name} />
+                <span className={`asset-kind ${asset.kind}`}>{asset.kind === 'product' ? '商品' : asset.kind === 'output' ? '结果' : asset.kind === 'scene' ? '场景' : '参考'}</span>
+                <small>{asset.name}</small>
+                <i><Plus size={13} /></i>
+              </button>
+            ))}
+          </div> : <div className="asset-empty"><ImagePlus size={24} /><strong>当前画布还没有保留结果</strong><p>在审核页选择满意候选后，会自动出现在这里。</p></div>}
+          {tab === 'assets' && <><div className="asset-section-title"><span>商品事实</span><LockKeyhole size={13} /></div><div className="fact-mini-card"><strong>MF-DEMO-001</strong><p>透明喷雾瓶 · 深绿色泵头<br />完整单件 · 竖直独立摆放</p><button>查看 8 条证据 <Eye size={13} /></button></div></>}
+        </>
+      ) : (
+        <div className="layer-panel">
+          <div className="asset-section-title"><span>图层顺序</span><em>{nodes.length}</em></div>
+          <p className="layer-help">顶部图层覆盖底部 · Shift 点击可多选</p>
+          <div className="layer-list">
+            {[...nodes].reverse().map((node, reverseIndex) => {
+              const actualIndex = nodes.length - 1 - reverseIndex
+              const active = selectedIds.includes(node.id)
+              return <div key={node.id} className={`layer-row ${active ? 'active' : ''} ${node.visible === false ? 'hidden' : ''}`}>
+                <div className="layer-main" role="button" tabIndex={0} onClick={(event) => onSelect(node.id, event.shiftKey || event.metaKey || event.ctrlKey)} onDoubleClick={() => { setEditingId(node.id); setDraftName(nodeLabel(node)) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(node.id, event.shiftKey || event.metaKey || event.ctrlKey) }}>
+                  <span>{node.type === 'image' ? <ImagePlus size={15} /> : <TextCursorInput size={15} />}</span>
+                  {editingId === node.id ? <input autoFocus value={draftName} onChange={(event) => setDraftName(event.target.value)} onBlur={() => finishRename(node)} onKeyDown={(event) => { if (event.key === 'Enter') finishRename(node); if (event.key === 'Escape') setEditingId(undefined) }} onClick={(event) => event.stopPropagation()} /> : <strong>{nodeLabel(node)}</strong>}
+                </div>
+                <button title={node.visible === false ? '显示图层' : '隐藏图层'} onClick={() => onUpdateNode(node.id, { visible: node.visible === false })}>{node.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                <button title={node.locked || node.id === 'scene-background' ? '已锁定' : '锁定图层'} disabled={node.id === 'scene-background'} onClick={() => onUpdateNode(node.id, { locked: !node.locked })}>{node.locked || node.id === 'scene-background' ? <LockKeyhole size={14} /> : <LockOpen size={14} />}</button>
+                <span className="layer-order"><button disabled={actualIndex >= nodes.length - 1} onClick={() => onMoveLayer(node.id, 'up')}>↑</button><button disabled={actualIndex <= 1} onClick={() => onMoveLayer(node.id, 'down')}>↓</button></span>
+              </div>
+            })}
+          </div>
+        </div>
+      )}
     </aside>
   )
 }
@@ -179,12 +251,12 @@ function AssetPanel({ onAdd }: { onAdd: (asset: AssetItem) => void }) {
 function Inspector({
   prompt,
   setPrompt,
-  selectedNode,
+  selectedNodes,
   onUpdateSelected,
   onGenerate,
   onPreflight,
-  onCenterHorizontal,
-  onCenterVertical,
+  onAlign,
+  onDistribute,
   onLayerUp,
   onLayerDown,
   generating,
@@ -192,12 +264,12 @@ function Inspector({
 }: {
   prompt: PromptDraft
   setPrompt: (value: PromptDraft) => void
-  selectedNode?: CanvasNode
+  selectedNodes: CanvasNode[]
   onUpdateSelected: (patch: Partial<CanvasNode>) => void
   onGenerate: () => void
   onPreflight: () => void
-  onCenterHorizontal: () => void
-  onCenterVertical: () => void
+  onAlign: (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void
+  onDistribute: (axis: 'horizontal' | 'vertical') => void
   onLayerUp: () => void
   onLayerDown: () => void
   generating: boolean
@@ -205,11 +277,12 @@ function Inspector({
 }) {
   const [tab, setTab] = useState<'generate' | 'properties' | 'history'>('generate')
   const [advanced, setAdvanced] = useState(false)
+  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : undefined
   const selectedIsBackground = selectedNode?.id === 'scene-background'
 
   useEffect(() => {
-    if (selectedNode) setTab('properties')
-  }, [selectedNode?.id])
+    if (selectedNodes.length) setTab('properties')
+  }, [selectedNode?.id, selectedNodes.length])
 
   return (
     <aside className="inspector-panel">
@@ -254,14 +327,14 @@ function Inspector({
 
       {tab === 'properties' && (
         <div className="inspector-scroll property-panel">
-          {selectedNode ? (
+          {selectedNodes.length ? (
             <>
-              <div className="selection-summary"><span>{selectedNode.type === 'image' ? <ImagePlus size={17} /> : <TextCursorInput size={17} />}</span><p><small>当前选择</small><strong>{selectedNode.id === 'scene-background' ? '画板底图（已锁定）' : selectedNode.type === 'image' ? '图片图层' : '文字图层'}</strong></p></div>
-              <div className="property-grid"><label>X<input type="number" disabled={selectedIsBackground} value={Math.round(selectedNode.x)} onChange={(event) => onUpdateSelected({ x: Number(event.target.value) })} /></label><label>Y<input type="number" disabled={selectedIsBackground} value={Math.round(selectedNode.y)} onChange={(event) => onUpdateSelected({ y: Number(event.target.value) })} /></label></div>
-              {selectedNode.type === 'text' && <><label className="property-label">文字内容<textarea value={selectedNode.text} onChange={(event) => onUpdateSelected({ text: event.target.value } as Partial<CanvasNode>)} /></label><div className="property-grid"><label>字号<input type="number" value={selectedNode.fontSize} onChange={(event) => onUpdateSelected({ fontSize: Number(event.target.value) } as Partial<CanvasNode>)} /></label><label>颜色<input type="color" value={selectedNode.fill} onChange={(event) => onUpdateSelected({ fill: event.target.value } as Partial<CanvasNode>)} /></label></div></>}
-              <div className="inspector-section layer-actions"><div className="section-heading"><span>对齐与层级</span></div><div><button className="row-action" disabled={selectedIsBackground} onClick={onCenterHorizontal}><AlignCenter size={15} />水平居中</button><button className="row-action" disabled={selectedIsBackground} onClick={onCenterVertical}><AlignCenter size={15} />垂直居中</button><button className="row-action" disabled={selectedIsBackground} onClick={onLayerUp}><Layers3 size={15} />上移一层</button><button className="row-action" disabled={selectedIsBackground} onClick={onLayerDown}><ArrowDownToLine size={15} />下移一层</button></div></div>
+              <div className="selection-summary"><span>{selectedNodes.length > 1 ? <Layers3 size={17} /> : selectedNode?.type === 'image' ? <ImagePlus size={17} /> : <TextCursorInput size={17} />}</span><p><small>当前选择</small><strong>{selectedNodes.length > 1 ? `${selectedNodes.length} 个图层` : selectedNode?.id === 'scene-background' ? '画板底图（已锁定）' : selectedNode?.type === 'image' ? '图片图层' : '文字图层'}</strong></p></div>
+              {selectedNode && <><div className="property-grid"><label>X<input type="number" disabled={selectedIsBackground || selectedNode.locked} value={Math.round(selectedNode.x)} onChange={(event) => onUpdateSelected({ x: Number(event.target.value) })} /></label><label>Y<input type="number" disabled={selectedIsBackground || selectedNode.locked} value={Math.round(selectedNode.y)} onChange={(event) => onUpdateSelected({ y: Number(event.target.value) })} /></label></div>
+              {selectedNode.type === 'text' && <><label className="property-label">文字内容<textarea value={selectedNode.text} onChange={(event) => onUpdateSelected({ text: event.target.value } as Partial<CanvasNode>)} /></label><div className="property-grid"><label>字号<input type="number" value={selectedNode.fontSize} onChange={(event) => onUpdateSelected({ fontSize: Number(event.target.value) } as Partial<CanvasNode>)} /></label><label>颜色<input type="color" value={selectedNode.fill} onChange={(event) => onUpdateSelected({ fill: event.target.value } as Partial<CanvasNode>)} /></label></div></>}</>}
+              <div className="inspector-section layer-actions"><div className="section-heading"><span>对齐</span><small>{selectedNodes.length > 1 ? '相对选择范围' : '相对画板'}</small></div><div className="alignment-grid"><button title="左对齐" onClick={() => onAlign('left')}><AlignStartVertical size={16} /></button><button title="水平居中" onClick={() => onAlign('center')}><AlignCenter size={16} /></button><button title="右对齐" onClick={() => onAlign('right')}><AlignEndVertical size={16} /></button><button title="顶对齐" onClick={() => onAlign('top')}><AlignStartHorizontal size={16} /></button><button title="垂直居中" onClick={() => onAlign('middle')}><AlignCenter size={16} className="rotate-icon" /></button><button title="底对齐" onClick={() => onAlign('bottom')}><AlignEndHorizontal size={16} /></button></div><div className="distribution-actions"><button disabled={selectedNodes.length < 3} onClick={() => onDistribute('horizontal')}><AlignHorizontalDistributeCenter size={15} />水平分布</button><button disabled={selectedNodes.length < 3} onClick={() => onDistribute('vertical')}><AlignVerticalDistributeCenter size={15} />垂直分布</button></div><div><button className="row-action" disabled={selectedIsBackground || selectedNodes.length !== 1} onClick={onLayerUp}><Layers3 size={15} />上移一层</button><button className="row-action" disabled={selectedIsBackground || selectedNodes.length !== 1} onClick={onLayerDown}><ArrowDownToLine size={15} />下移一层</button></div></div>
             </>
-          ) : <div className="empty-inspector"><MousePointer2 size={28} /><strong>选择一个画布元素</strong><p>点击图片或文字即可编辑；方向键微移，按住 Shift 每次移动 10px。</p></div>}
+          ) : <div className="empty-inspector"><MousePointer2 size={28} /><strong>选择一个或多个元素</strong><p>拖拽空白区域可框选；Shift 点击追加选择，随后可批量对齐与分布。</p></div>}
         </div>
       )}
 
@@ -305,12 +378,13 @@ export function StudioPage() {
   const [nodes, setNodes] = useState<CanvasNode[]>(() => initialNodes(selectedShot))
   const [past, setPast] = useState<CanvasNode[][]>([])
   const [future, setFuture] = useState<CanvasNode[][]>([])
-  const [selectedId, setSelectedId] = useState<string>()
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [tool, setTool] = useState<'select' | 'hand'>('select')
   const [spaceHand, setSpaceHand] = useState(false)
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, zoom: 0.78, mode: 'fit' })
   const [prompt, setPromptState] = useState(defaultPrompt)
   const [generating, setGenerating] = useState(false)
+  const [resultAssets, setResultAssets] = useState<AssetItem[]>([])
   const [saveState, setSaveState] = useState<SaveState>('loading')
   const [canvasVersion, setCanvasVersion] = useState<number>()
   const [reloadToken, setReloadToken] = useState(0)
@@ -334,6 +408,29 @@ export function StudioPage() {
   }
   const activeCanvasId = useRef(canvasId)
   const activeTool = spaceHand ? 'hand' : tool
+
+  const selectLayer = (id: string, additive = false) => {
+    setSelectedIds((current) => additive
+      ? current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+      : [id])
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    if (!apiOnline || demoMode) {
+      setResultAssets([])
+      return () => { cancelled = true }
+    }
+    void listCandidates({ reviewStatus: 'selected' })
+      .then((candidates) => {
+        if (cancelled) return
+        setResultAssets(candidates
+          .filter((candidate) => candidate.product === selectedProduct && candidate.task === selectedTask && candidate.shot === selectedShot && candidate.url)
+          .map((candidate) => ({ id: candidate.id, name: candidate.name ?? `${candidate.task} · 候选 ${candidate.variant}`, url: candidate.url, kind: 'output', dimensions: candidate.width && candidate.height ? `${candidate.width} × ${candidate.height}` : undefined })))
+      })
+      .catch(() => { if (!cancelled) setResultAssets([]) })
+    return () => { cancelled = true }
+  }, [activeRunId, apiOnline, demoMode, selectedProduct, selectedShot, selectedTask])
 
   const markDirty = useCallback(() => {
     if (!hydrating.current && !loadFailedCanvases.current.has(activeCanvasId.current)) {
@@ -434,7 +531,7 @@ export function StudioPage() {
     activeCanvasId.current = canvasId
     hydrating.current = true
     setSaveState('loading')
-    setSelectedId(undefined)
+    setSelectedIds([])
     setPast([])
     setFuture([])
     const hydrate = async () => {
@@ -567,6 +664,8 @@ export function StudioPage() {
       const height = natural.height * scale
       const background: CanvasNode = {
         id: 'scene-background',
+        name: '画板底图',
+        locked: true,
         type: 'image',
         src: asset.url,
         x: ARTBOARD.x + (ARTBOARD.width - width) / 2,
@@ -575,7 +674,7 @@ export function StudioPage() {
         height,
       }
       commitNodes([background, ...currentNodes.filter((node) => node.id !== 'scene-background')])
-      setSelectedId(undefined)
+      setSelectedIds([])
     } else {
       const scale = Math.min(320 / natural.width, 320 / natural.height)
       const width = Math.max(24, natural.width * scale)
@@ -583,6 +682,7 @@ export function StudioPage() {
       const offset = (currentNodes.length % 4) * 20
       const node: CanvasNode = {
         id: `image-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: asset.name,
         type: 'image',
         src: asset.url,
         x: ARTBOARD.x + (ARTBOARD.width - width) / 2 + offset,
@@ -591,7 +691,7 @@ export function StudioPage() {
         height,
       }
       commitNodes([...currentNodes, node])
-      setSelectedId(node.id)
+      setSelectedIds([node.id])
     }
     notify({ title: mode === 'background' ? '已设为画板底图' : '素材已加入画布', detail: asset.name, tone: 'success' })
     return true
@@ -636,45 +736,79 @@ export function StudioPage() {
   }, [addAsset, canvasInsertRequest, consumeCanvasInsert, notify, save, saveState, selectedProduct, selectedShot, selectedTask, setSelectedProduct, setSelectedShot, setSelectedTask])
 
   const addText = () => {
-    const node: CanvasNode = { id: `text-${Date.now()}`, type: 'text', text: '输入标题', x: 380, y: 680, width: 280, fontSize: 24, fontStyle: 'bold', fill: '#173f38' }
+    const node: CanvasNode = { id: `text-${Date.now()}`, name: '新文字', type: 'text', text: '输入标题', x: 380, y: 680, width: 280, fontSize: 24, fontStyle: 'bold', fill: '#173f38' }
     commitNodes([...nodesRef.current, node])
-    setSelectedId(node.id)
+    setSelectedIds([node.id])
   }
 
   const deleteSelected = useCallback(() => {
-    if (!selectedId || selectedId === 'scene-background') return
-    commitNodes(nodesRef.current.filter((node) => node.id !== selectedId))
-    setSelectedId(undefined)
-  }, [commitNodes, selectedId])
+    const removable = new Set(nodesRef.current.filter((node) => selectedIds.includes(node.id) && node.id !== 'scene-background' && !node.locked).map((node) => node.id))
+    if (!removable.size) return
+    commitNodes(nodesRef.current.filter((node) => !removable.has(node.id)))
+    setSelectedIds([])
+  }, [commitNodes, selectedIds])
 
   const duplicateSelected = useCallback(() => {
     const currentNodes = nodesRef.current
-    const source = currentNodes.find((node) => node.id === selectedId)
-    if (!source || source.id === 'scene-background') return
-    const copy = { ...source, id: `${source.type}-${Date.now()}`, x: source.x + 24, y: source.y + 24 } as CanvasNode
-    commitNodes([...currentNodes, copy])
-    setSelectedId(copy.id)
-  }, [commitNodes, selectedId])
+    const sources = currentNodes.filter((node) => selectedIds.includes(node.id) && node.id !== 'scene-background' && !node.locked)
+    if (!sources.length) return
+    const stamp = Date.now()
+    const copies = sources.map((source, index) => ({ ...source, id: `${source.type}-${stamp}-${index}`, name: `${nodeLabel(source)} 副本`, x: source.x + 24, y: source.y + 24 } as CanvasNode))
+    commitNodes([...currentNodes, ...copies])
+    setSelectedIds(copies.map((node) => node.id))
+  }, [commitNodes, selectedIds])
 
   const updateSelected = (patch: Partial<CanvasNode>) => {
-    if (!selectedId || selectedId === 'scene-background') return
-    commitNodes(nodesRef.current.map((node) => node.id === selectedId ? ({ ...node, ...patch } as CanvasNode) : node))
+    const selected = new Set(selectedIds)
+    if (!selected.size) return
+    commitNodes(nodesRef.current.map((node) => selected.has(node.id) && node.id !== 'scene-background' && !node.locked ? ({ ...node, ...patch } as CanvasNode) : node))
   }
 
-  const centerSelected = (axis: 'horizontal' | 'vertical') => {
-    const node = nodesRef.current.find((item) => item.id === selectedId)
-    if (!node || node.id === 'scene-background') return
-    const lineCount = node.type === 'text' ? Math.max(1, node.text.split('\n').length) : 1
-    const height = node.type === 'image' ? node.height : node.fontSize * 1.1 * lineCount
-    updateSelected(axis === 'horizontal'
-      ? { x: ARTBOARD.x + (ARTBOARD.width - node.width) / 2 }
-      : { y: ARTBOARD.y + (ARTBOARD.height - height) / 2 })
+  const updateNode = (id: string, patch: Partial<CanvasNode>) => {
+    commitNodes(nodesRef.current.map((node) => node.id === id ? ({ ...node, ...patch } as CanvasNode) : node))
   }
 
-  const moveLayer = (direction: 'up' | 'down') => {
-    if (!selectedId || selectedId === 'scene-background') return
+  const alignSelected = (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    const active = nodesRef.current.filter((node) => selectedIds.includes(node.id) && node.id !== 'scene-background' && !node.locked)
+    if (!active.length) return
+    const bounds = active.map(nodeBounds)
+    const target = active.length === 1 ? { left: ARTBOARD.x, right: ARTBOARD.x + ARTBOARD.width, top: ARTBOARD.y, bottom: ARTBOARD.y + ARTBOARD.height }
+      : { left: Math.min(...bounds.map((box) => box.x)), right: Math.max(...bounds.map((box) => box.right)), top: Math.min(...bounds.map((box) => box.y)), bottom: Math.max(...bounds.map((box) => box.bottom)) }
+    const selected = new Set(active.map((node) => node.id))
+    commitNodes(nodesRef.current.map((node) => {
+      if (!selected.has(node.id)) return node
+      const box = nodeBounds(node)
+      if (alignment === 'left') return { ...node, x: target.left }
+      if (alignment === 'center') return { ...node, x: (target.left + target.right - box.width) / 2 }
+      if (alignment === 'right') return { ...node, x: target.right - box.width }
+      if (alignment === 'top') return { ...node, y: target.top }
+      if (alignment === 'middle') return { ...node, y: (target.top + target.bottom - box.height) / 2 }
+      return { ...node, y: target.bottom - box.height }
+    }))
+  }
+
+  const distributeSelected = (axis: 'horizontal' | 'vertical') => {
+    const active = nodesRef.current.filter((node) => selectedIds.includes(node.id) && node.id !== 'scene-background' && !node.locked)
+    if (active.length < 3) return
+    const ordered = [...active].sort((a, b) => axis === 'horizontal' ? a.x - b.x : a.y - b.y)
+    const boxes = ordered.map(nodeBounds)
+    const start = axis === 'horizontal' ? boxes[0].x : boxes[0].y
+    const end = axis === 'horizontal' ? boxes.at(-1)!.right : boxes.at(-1)!.bottom
+    const occupied = boxes.reduce((sum, box) => sum + (axis === 'horizontal' ? box.width : box.height), 0)
+    const gap = (end - start - occupied) / (ordered.length - 1)
+    const positions = new Map<string, number>()
+    let cursor = start
+    ordered.forEach((node, index) => {
+      positions.set(node.id, cursor)
+      cursor += (axis === 'horizontal' ? boxes[index].width : boxes[index].height) + gap
+    })
+    commitNodes(nodesRef.current.map((node) => positions.has(node.id) ? { ...node, [axis === 'horizontal' ? 'x' : 'y']: positions.get(node.id)! } : node))
+  }
+
+  const moveLayer = (id: string, direction: 'up' | 'down') => {
+    if (id === 'scene-background') return
     const currentNodes = nodesRef.current
-    const index = currentNodes.findIndex((node) => node.id === selectedId)
+    const index = currentNodes.findIndex((node) => node.id === id)
     const target = direction === 'up' ? index + 1 : index - 1
     if (index < 0 || target < 1 || target >= currentNodes.length) return
     const next = [...currentNodes]
@@ -684,10 +818,10 @@ export function StudioPage() {
 
   const nudgeSelected = useCallback((dx: number, dy: number) => {
     const currentNodes = nodesRef.current
-    const node = currentNodes.find((item) => item.id === selectedId)
-    if (!node || node.id === 'scene-background') return
-    commitNodes(currentNodes.map((item) => item.id === selectedId ? { ...item, x: item.x + dx, y: item.y + dy } : item))
-  }, [commitNodes, selectedId])
+    const selected = new Set(currentNodes.filter((node) => selectedIds.includes(node.id) && node.id !== 'scene-background' && !node.locked).map((node) => node.id))
+    if (!selected.size) return
+    commitNodes(currentNodes.map((item) => selected.has(item.id) ? { ...item, x: item.x + dx, y: item.y + dy } : item))
+  }, [commitNodes, selectedIds])
 
   const generate = useCallback(async () => {
     if (generating) return
@@ -733,7 +867,7 @@ export function StudioPage() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicateSelected(); return }
       if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelected(); return }
-      if (event.key === 'Escape') { setSelectedId(undefined); return }
+      if (event.key === 'Escape') { setSelectedIds([]); return }
       if (event.key === '0') { event.preventDefault(); canvasRef.current?.fitArtboard(); return }
       if (event.key === '1') { event.preventDefault(); canvasRef.current?.zoomTo(1); return }
       const step = event.shiftKey ? 10 : 1
@@ -800,7 +934,8 @@ export function StudioPage() {
     setSelectedShot(shot)
   }
 
-  const selectedNode = useMemo(() => nodes.find((node) => node.id === selectedId), [nodes, selectedId])
+  const selectedNodes = useMemo(() => selectedIds.map((id) => nodes.find((node) => node.id === id)).filter((node): node is CanvasNode => Boolean(node)), [nodes, selectedIds])
+  const primarySelectedId = selectedIds.at(-1)
   const saveLabel = saveState === 'loading'
     ? '正在加载画布'
     : saveState === 'dirty'
@@ -832,7 +967,7 @@ export function StudioPage() {
             </div>
           </div>
         )}
-        <AssetPanel onAdd={(asset) => { void addAsset(asset) }} />
+        <AssetPanel onAdd={(asset) => { void addAsset(asset) }} resultAssets={resultAssets} nodes={nodes} selectedIds={selectedIds} onSelect={selectLayer} onUpdateNode={updateNode} onMoveLayer={moveLayer} />
         <section className="canvas-column">
           <div className="floating-toolbar">
             <button className={activeTool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="选择工具 (V)"><MousePointer2 size={17} /></button>
@@ -843,15 +978,15 @@ export function StudioPage() {
             <span />
             <button onClick={undo} disabled={!past.length} title="撤销"><Undo2 size={17} /></button>
             <button onClick={redo} disabled={!future.length} title="重做"><Redo2 size={17} /></button>
-            <button onClick={duplicateSelected} disabled={!selectedId || selectedId === 'scene-background'} title="复制"><Copy size={17} /></button>
-            <button onClick={deleteSelected} disabled={!selectedId || selectedId === 'scene-background'} title="删除"><Trash2 size={17} /></button>
+            <button onClick={duplicateSelected} disabled={!selectedNodes.some((node) => node.id !== 'scene-background' && !node.locked)} title="复制"><Copy size={17} /></button>
+            <button onClick={deleteSelected} disabled={!selectedNodes.some((node) => node.id !== 'scene-background' && !node.locked)} title="删除"><Trash2 size={17} /></button>
           </div>
-          {saveState !== 'loading' && <StudioCanvas key={hydrationKey} ref={canvasRef} nodes={nodes} onNodesChange={commitNodes} selectedId={selectedId} onSelect={setSelectedId} tool={activeTool} viewport={viewport} onViewportChange={changeViewport} artboardLabel={`${selectedTask} · ${shotOptions.find((shot) => shot.id === selectedShot)?.label ?? ''}`} />}
+          {saveState !== 'loading' && <StudioCanvas key={hydrationKey} ref={canvasRef} nodes={nodes} onNodesChange={commitNodes} selectedIds={selectedIds} onSelectionChange={setSelectedIds} tool={activeTool} viewport={viewport} onViewportChange={changeViewport} artboardLabel={`${selectedTask} · ${shotOptions.find((shot) => shot.id === selectedShot)?.label ?? ''}`} />}
           <div className="zoom-control"><button onClick={() => canvasRef.current?.zoomTo(viewport.zoom - 0.1)}><Minus size={14} /></button><input type="range" min="35" max="150" value={Math.round(viewport.zoom * 100)} onChange={(event) => canvasRef.current?.zoomTo(Number(event.target.value) / 100)} /><span>{Math.round(viewport.zoom * 100)}%</span><button onClick={() => canvasRef.current?.zoomTo(viewport.zoom + 0.1)}><Plus size={14} /></button><button onClick={() => canvasRef.current?.fitArtboard()} title="适应画板 (0)"><Maximize2 size={14} /></button></div>
-          <div className="canvas-hint"><Grip size={13} />滚轮缩放 · Space 抓手 · 0 适应 · 方向键微移 · ⌘D 复制</div>
+          <div className="canvas-hint"><Grip size={13} />空白拖拽框选 · Shift 多选 · 自动吸附 · 方向键微移</div>
           <button className="queue-peek" onClick={() => navigate(activeRunId ? `/queue?run=${encodeURIComponent(activeRunId)}` : '/queue')}><span><i />{activeRunId ? `真实运行 ${activeRunId.slice(0, 8)} 已接入队列` : demoMode && jobs.filter((job) => job.status === 'running').length ? `${jobs.filter((job) => job.status === 'running').length} 个演示任务生成中` : '本地候选暂存已启用'}</span><strong>查看运行队列 <ChevronDown size={14} /></strong></button>
         </section>
-        <Inspector prompt={prompt} setPrompt={setPrompt} selectedNode={selectedNode} onUpdateSelected={updateSelected} onGenerate={() => { void generate() }} onPreflight={() => { void preflight() }} onCenterHorizontal={() => centerSelected('horizontal')} onCenterVertical={() => centerSelected('vertical')} onLayerUp={() => moveLayer('up')} onLayerDown={() => moveLayer('down')} generating={generating} canvasVersion={canvasVersion} />
+        <Inspector prompt={prompt} setPrompt={setPrompt} selectedNodes={selectedNodes} onUpdateSelected={updateSelected} onGenerate={() => { void generate() }} onPreflight={() => { void preflight() }} onAlign={alignSelected} onDistribute={distributeSelected} onLayerUp={() => primarySelectedId && moveLayer(primarySelectedId, 'up')} onLayerDown={() => primarySelectedId && moveLayer(primarySelectedId, 'down')} generating={generating} canvasVersion={canvasVersion} />
       </div>
       <div className="studio-warning"><ScanSearch size={14} /><span>场景图物理交互：独立摆放 · 完整底座接触平面 · 重心竖直稳定</span><button><CircleAlert size={13} />查看计划</button><X size={13} /></div>
     </div>

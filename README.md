@@ -64,8 +64,10 @@ The built-in e-commerce matrix covers:
 
 ### Editing canvas
 
-- Image and text layers with drag, resize, rotate, duplicate, delete, and layer ordering.
+- Image and text layers with drag, resize, rotate, duplicate, delete, naming, visibility, locking, and ordering.
+- Marquee selection, Shift multi-select, grouped movement, artboard snapping, batch alignment, and equal distribution.
 - Select and hand tools, pointer-centered zoom, fit-to-artboard, and keyboard nudging.
+- A real retained-results shelf backed by promoted review candidates, plus direct local-image import.
 - Locked scene background and protected background properties.
 - Structured prompt editor for subject, environment, composition, visible text, and negative constraints.
 - Independent documents for every `product + task + shot` combination.
@@ -232,6 +234,7 @@ The current suite covers API persistence, path security, database migration, asy
 ## Documentation
 
 - [Product specification](docs/product-spec.md)
+- [Canvas product and engineering roadmap](docs/canvas-roadmap.md)
 - [Technical architecture and security boundaries](docs/architecture.md)
 - [Local Skill batch-generation lifecycle](docs/local-batch-generation.md)
 - [Development and operations guide](docs/development.md)

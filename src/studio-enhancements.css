@@ -7,13 +7,156 @@
 }
 
 .studio-page .floating-toolbar {
-  height: 45px;
+  height: 49px;
   padding: 5px;
 }
 
 .studio-page .floating-toolbar button {
-  width: 35px;
+  width: 39px;
+  height: 38px;
+}
+
+.studio-page .upload-zone input {
+  display: none;
+}
+
+.studio-page .asset-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 12px;
+  color: #929790;
+  border: 1px dashed #d8dad4;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.studio-page .asset-empty strong {
+  margin-top: 10px;
+  color: #606660;
+  font-size: 12px;
+}
+
+.studio-page .asset-empty p {
+  margin: 5px 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.studio-page .layer-help {
+  margin: -3px 2px 10px;
+  color: #92968f;
+  font-size: 11px;
+}
+
+.studio-page .layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.studio-page .layer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px 28px 37px;
+  align-items: center;
+  min-height: 43px;
+  padding: 3px;
+  color: #686d67;
+  background: #f2f2ee;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.studio-page .layer-row.active {
+  color: #195f56;
+  background: #e7f1ed;
+  border-color: #9fc4b9;
+}
+
+.studio-page .layer-row.hidden {
+  opacity: .56;
+}
+
+.studio-page .layer-row > button,
+.studio-page .layer-order button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 30px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.studio-page .layer-row > button:hover:not(:disabled),
+.studio-page .layer-order button:hover:not(:disabled) {
+  background: rgba(20, 91, 81, .09);
+}
+
+.studio-page .layer-row button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.studio-page .layer-row .layer-main {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
   height: 34px;
+  min-width: 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: 0;
+}
+
+.studio-page .layer-row .layer-main:focus-visible {
+  box-shadow: 0 0 0 2px rgba(23, 107, 96, .22);
+}
+
+.studio-page .layer-main > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 25px;
+  width: 25px;
+  height: 25px;
+  background: rgba(255, 255, 255, .72);
+  border-radius: 6px;
+}
+
+.studio-page .layer-main strong,
+.studio-page .layer-main input {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-page .layer-main input {
+  width: 100%;
+  height: 27px;
+  padding: 0 5px;
+  color: #355b53;
+  background: white;
+  border: 1px solid #85afa4;
+  border-radius: 5px;
+  outline: 0;
+}
+
+.studio-page .layer-order {
+  display: flex;
+}
+
+.studio-page .layer-order button {
+  width: 18px;
+  font-size: 13px;
 }
 
 .studio-page .autosave.dirty i,
@@ -35,6 +178,65 @@
 
 .studio-page .layer-actions {
   margin-top: 8px;
+}
+
+.studio-page .layer-actions .section-heading small {
+  color: #929790;
+  font-size: 11px;
+}
+
+.studio-page .layer-actions .alignment-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.studio-page .layer-actions .alignment-grid button {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  color: #5f6660;
+  background: #f4f3ef;
+  border: 1px solid #e0e2db;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.studio-page .layer-actions .alignment-grid button:hover {
+  color: #176b60;
+  background: #e8f1ed;
+  border-color: #a6c8be;
+}
+
+.studio-page .rotate-icon {
+  transform: rotate(90deg);
+}
+
+.studio-page .layer-actions .distribution-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.studio-page .layer-actions .distribution-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  color: #606660;
+  background: #f4f3ef;
+  border: 1px solid #e0e2db;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.studio-page .layer-actions .distribution-actions button:disabled {
+  opacity: .38;
+  cursor: default;
 }
 
 .studio-page .layer-actions > div:last-child {

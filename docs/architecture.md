@@ -48,8 +48,8 @@ The API binds to loopback by default. Vite proxies `/api` to the local API durin
 | `MatrixPage` | Product/task/shot selection and batch submission |
 | `QueuePage` | Real generation-run polling and progress presentation |
 | `ReviewPage` | Candidate grouping, keep/delete decisions, and canvas handoff |
-| `StudioPage` | Canvas document lifecycle, prompt editor, history, and export |
-| `StudioCanvas` | Konva stage, content clipping, viewport interaction, and rendering |
+| `StudioPage` | Canvas document lifecycle, retained assets, layer metadata, alignment, prompt editor, history, and export |
+| `StudioCanvas` | Konva stage, multi-selection, snapping, transforms, content clipping, viewport interaction, and rendering |
 
 ### Client state
 

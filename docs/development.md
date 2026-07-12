@@ -135,6 +135,9 @@ When changing Studio persistence or interaction, verify:
 8. background movement remains locked through drag, keyboard, and properties;
 9. PNG export is exactly 1024 × 1024 and excludes editor overlays;
 10. export failure restores Stage position, scale, and layer visibility.
+11. marquee and additive selection exclude hidden and locked nodes;
+12. a grouped drag, alignment, or distribution operation creates one undo snapshot;
+13. hidden image layers do not block export readiness or appear in the PNG;
 
 ## 10. Commit hygiene
 

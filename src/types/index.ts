@@ -83,30 +83,32 @@ export interface AssetItem {
   selected?: boolean
 }
 
-export interface CanvasImageNode {
+export interface CanvasNodeBase {
   id: string
-  type: 'image'
-  src: string
+  name?: string
+  visible?: boolean
+  locked?: boolean
   x: number
   y: number
-  width: number
-  height: number
   rotation?: number
   opacity?: number
 }
 
-export interface CanvasTextNode {
-  id: string
+export interface CanvasImageNode extends CanvasNodeBase {
+  type: 'image'
+  src: string
+  width: number
+  height: number
+}
+
+export interface CanvasTextNode extends CanvasNodeBase {
   type: 'text'
   text: string
-  x: number
-  y: number
   width: number
   fontSize: number
   fontFamily?: string
   fontStyle?: string
   fill: string
-  rotation?: number
   align?: 'left' | 'center' | 'right'
 }
 
