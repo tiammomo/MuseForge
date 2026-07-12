@@ -158,8 +158,6 @@ kbd { min-width: 22px; padding: 3px 5px; color: #777b76; background: #fbfaf7; bo
 .featured .metric-footer { color: #8fa098; border-top-color: rgba(232, 241, 235, .1); }
 .featured .metric-footer > strong { color: #dbe6df; }
 .featured:hover .metric-footer > strong { color: var(--lime); }
-.metric-progress { height: 4px; margin: -2px 0 8px; overflow: hidden; background: #ecece7; border-radius: 99px; }
-.metric-progress i { display: block; height: 100%; background: linear-gradient(90deg, #dc957d, #d8b370); border-radius: inherit; }
 .overview-columns { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(440px, .85fr); gap: 16px; margin-top: 16px; }
 .recent-projects, .production-pulse { padding: 22px; }
 .project-list { margin-top: 11px; }

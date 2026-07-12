@@ -78,7 +78,6 @@ export function OverviewPage() {
         <Link className="metric-card coverage" to="/matrix">
           <div className="metric-head"><div className="metric-icon coral"><Sparkles size={20} /></div><div className="metric-heading"><small>Prompt 覆盖</small><span>结构化生成准备度</span></div><em className={promptCoverage === 100 ? 'stable' : 'attention'}>{promptCoverage === 100 ? '完整' : '待补充'}</em></div>
           <div className="metric-body"><div className="metric-value"><strong>{promptCoverage}<sup>%</sup></strong><span>{workspace.stats.prompts} 份 Prompt</span></div></div>
-          <div className="metric-progress" aria-label={`Prompt 覆盖率 ${promptCoverage}%`}><i style={{ width: `${promptCoverage}%` }} /></div>
           <div className="metric-footer"><span>{workspace.stats.tasks * 5} 个目标图型</span><strong>检查准备度 <ArrowRight size={14} /></strong></div>
         </Link>
       </section>
