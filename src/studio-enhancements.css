@@ -317,3 +317,62 @@
 .studio-page .canvas-load-blocker button {
   min-width: 132px;
 }
+
+.studio-page .reference-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px;
+  color: #8a655d;
+  background: #fbf2ee;
+  border: 1px dashed #e5c7bd;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.studio-page .prompt-fields textarea:disabled {
+  color: #66706a;
+  background: #eef2ef;
+  cursor: not-allowed;
+}
+
+.studio-page .advanced-grid.truthful {
+  grid-template-columns: minmax(90px, .7fr) 1.3fr;
+}
+
+.studio-page .server-parameter {
+  padding: 7px 9px;
+  background: #f5f4f0;
+  border: 1px solid #dfe0da;
+  border-radius: 7px;
+}
+
+.studio-page .server-parameter span,
+.studio-page .server-parameter strong,
+.studio-page .server-parameter small {
+  display: block;
+}
+
+.studio-page .server-parameter span,
+.studio-page .server-parameter small {
+  color: #858b85;
+  font-size: 10px;
+}
+
+.studio-page .server-parameter strong {
+  margin: 3px 0;
+  color: #49514c;
+  font-size: 11px;
+}
+
+.studio-page .preflight-card.idle > div > span,
+.studio-page .preflight-card.checking > div > span {
+  color: #786c53;
+  background: #f1eadb;
+}
+
+.studio-page .preflight-card.failed > div > span {
+  color: #9b4f46;
+  background: #f8e4df;
+}

@@ -1,111 +1,68 @@
-import { useState } from 'react'
-import {
-  AlertCircle,
-  Check,
-  ChevronRight,
-  FileImage,
-  FileText,
-  Fingerprint,
-  FolderOpen,
-  ImagePlus,
-  Link2,
-  LockKeyhole,
-  MoreHorizontal,
-  ScanSearch,
-  ShieldCheck,
-  Sparkles,
-  X,
-} from 'lucide-react'
-import { demoAssets } from '../lib/demo'
+import { useMemo, useState } from 'react'
+import { AlertCircle, Check, ChevronRight, FileImage, FileText, Fingerprint, FolderOpen, LockKeyhole, ScanSearch, ShieldCheck } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 
-const facts = [
-  { field: '商品身份', value: 'MF-DEMO-001 · 夏日补水喷雾', source: '商品说明.md', confidence: '已确认' },
-  { field: '外形结构', value: '透明圆柱瓶身，深绿色圆角泵头', source: '主商品.png', confidence: '已确认' },
-  { field: '包装数量', value: '单件', source: '商品说明.md', confidence: '已确认' },
-  { field: '使用机制', value: '独立站立；完整底座接触水平平面', source: '主商品.png', confidence: '已确认' },
-  { field: '准确尺寸', value: '未提供，不生成数字尺寸', source: '—', confidence: '缺失' },
-  { field: '适用场景', value: '中性商业 / 明亮家居护理场景', source: '商品说明.md', confidence: '已确认' },
-]
-
 export function AssetsPage() {
-  const [tab, setTab] = useState<'assets' | 'facts' | 'references'>('references')
-  const [selected, setSelected] = useState<Set<string>>(new Set(['cutout']))
-  const notify = useAppStore((state) => state.notify)
-
-  const toggle = (id: string) => setSelected((current) => {
-    const next = new Set(current)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
+  const [tab, setTab] = useState<'assets' | 'facts' | 'references'>('assets')
+  const workspace = useAppStore((state) => state.workspace)
+  const selectedProduct = useAppStore((state) => state.selectedProduct)
+  const selectedTask = useAppStore((state) => state.selectedTask)
+  const product = workspace?.products.find((item) => item.id === selectedProduct) ?? workspace?.products[0]
+  const combination = workspace?.combinations?.find((item) => item.id === product?.id)
+  const task = combination?.tasks.find((item) => item.name === selectedTask) ?? combination?.tasks[0]
+  const sourceImages = product?.images ?? []
+  const references = task?.references ?? []
+  const sourcePath = product ? `workspace / 原始商品图 / ${product.id}` : 'workspace / 原始商品图'
+  const taskPath = task?.relativePath ?? (product ? `组合/${product.id}` : '组合')
+  const readiness = useMemo(() => {
+    if (!task) return { label: '尚未准备任务', ok: false }
+    if (!task.hasPrompts) return { label: '缺少 prompts.json', ok: false }
+    if (!task.hasReferenceManifest || !task.referenceCount) return { label: '缺少参考图清单', ok: false }
+    return { label: '任务文件可追溯', ok: true }
+  }, [task])
 
   return (
     <div className="assets-page page-pad">
       <section className="asset-context-bar">
-        <div><span className="product-avatar"><img src="/demo/product-cutout.png" alt="" /></span><p><small>商品工作区</small><strong>MF-DEMO-001 · 夏日补水喷雾</strong></p><ChevronRight size={16} /><button>单品任务 <ChevronRight size={14} /></button></div>
-        <span className="fingerprint"><Fingerprint size={14} />源资料指纹有效 · 刚刚校验</span>
+        <div><span className="product-avatar">{product?.thumbnail ? <img src={product.thumbnail} alt="" /> : <FileImage size={18} />}</span><p><small>商品工作区</small><strong>{product?.name ?? '没有可用商品'}</strong></p><ChevronRight size={16} /><span className="context-task">{task?.name ?? '未准备任务'}</span></div>
+        <span className={`fingerprint ${readiness.ok ? '' : 'warning'}`}><Fingerprint size={14} />{readiness.label}</span>
       </section>
 
       <div className="wide-tabs">
-        <button className={tab === 'assets' ? 'active' : ''} onClick={() => setTab('assets')}><FolderOpen size={16} />源素材 <em>5</em></button>
-        <button className={tab === 'facts' ? 'active' : ''} onClick={() => setTab('facts')}><FileText size={16} />商品事实 <em>8</em></button>
-        <button className={tab === 'references' ? 'active' : ''} onClick={() => setTab('references')}><ScanSearch size={16} />参考图筛选 <em>2 / 5</em></button>
+        <button className={tab === 'assets' ? 'active' : ''} onClick={() => setTab('assets')}><FolderOpen size={16} />源素材 <em>{sourceImages.length}</em></button>
+        <button className={tab === 'facts' ? 'active' : ''} onClick={() => setTab('facts')}><FileText size={16} />商品事实 <em>{Math.max(0, (product?.assetCount ?? 0) - sourceImages.length)}</em></button>
+        <button className={tab === 'references' ? 'active' : ''} onClick={() => setTab('references')}><ScanSearch size={16} />任务参考 <em>{references.length} / 5</em></button>
       </div>
 
-      {tab === 'references' && (
-        <div className="reference-layout">
-          <section className="panel candidate-panel">
-            <div className="panel-heading"><div><small>视觉审查</small><h3>候选素材</h3></div><button className="button secondary"><ImagePlus size={15} />添加素材</button></div>
-            <div className="curation-help"><ShieldCheck size={17} /><p><strong>参考图只锁定商品身份</strong><span>请选择能确认完整外形、关键结构和正确使用关系的图片。单品最多 5 张主商品图。</span></p></div>
-            <div className="candidate-grid">
-              {demoAssets.slice(0, 6).map((asset, index) => {
-                const isSelected = selected.has(asset.id)
-                const excluded = index === 4 || index === 5
-                return (
-                  <article key={asset.id} className={`candidate-card ${isSelected ? 'selected' : ''} ${excluded ? 'excluded' : ''}`}>
-                    <button className="candidate-image" onClick={() => !excluded && toggle(asset.id)}>
-                      <img src={asset.url} alt={asset.name} />
-                      <span className="candidate-check">{isSelected && <Check size={14} />}{excluded && <X size={14} />}</span>
-                      <em>{asset.dimensions}</em>
-                    </button>
-                    <div><strong>{asset.name}</strong><small>{excluded ? (index === 4 ? '排除 · 场景不相关' : '排除 · 人像类素材') : isSelected ? '已选择 · 商品身份' : '待审查'}</small></div>
-                    <button className="icon-button small"><MoreHorizontal size={15} /></button>
-                  </article>
-                )
-              })}
-            </div>
-          </section>
-
-          <aside className="panel manifest-panel">
-            <div className="panel-heading"><div><small>任务局部清单</small><h3>参考图集合</h3></div><span className="count-pill">{selected.size} / 5</span></div>
-            <div className="manifest-task"><span>用于任务</span><button>单品 · 全部五类图 <ChevronRight size={14} /></button></div>
-            <div className="manifest-list">
-              {demoAssets.filter((asset) => selected.has(asset.id)).map((asset, index) => (
-                <div key={asset.id}><img src={asset.url} alt="" /><p><strong>主商品-{String(index + 1).padStart(2, '0')}.png</strong><small>{index === 0 ? '身份 · 结构 · 场景' : '身份 · 质感 · 主图'}</small></p><button onClick={() => toggle(asset.id)}><X size={14} /></button></div>
-              ))}
-            </div>
-            <div className="role-limit"><div><span>主商品</span><strong>{selected.size} / 5</strong></div><div className="limit-track"><i style={{ width: `${selected.size * 20}%` }} /></div><small>组合任务限制为 3 张主商品 + 2 张配件</small></div>
-            <div className="manifest-preview"><div><FileText size={15} /><span><strong>reference_manifest.json</strong><small>将记录角色、来源、用途与限制</small></span></div><button>预览</button></div>
-            <div className="manifest-checks"><p><Check size={13} />商品身份清晰且一致</p><p><Check size={13} />包含完整商品全貌</p><p><Check size={13} />未发现品牌、认证或敏感文字</p><p className="warning"><AlertCircle size={13} />尚缺少可信尺寸证据</p></div>
-            <button className="button dark full" onClick={() => notify({ title: '参考图集合已发布', detail: `${selected.size} 张图片与 manifest 已固化到任务目录`, tone: 'success' })}><Sparkles size={16} />发布参考图集合</button>
-            <small className="publish-note"><LockKeyhole size={11} />发布会创建新版本，不覆盖旧的生成记录</small>
-          </aside>
-        </div>
+      {tab === 'assets' && (
+        <section className="panel source-assets-panel">
+          <div className="panel-heading"><div><small>{sourcePath}</small><h3>源商品图片</h3></div><span className="count-pill">只读扫描</span></div>
+          {sourceImages.length ? <div className="source-file-grid">{sourceImages.map((image) => <article key={image.relativePath ?? image.url}><img src={image.url} alt={image.name} /><div><FileImage size={15} /><p><strong>{image.name}</strong><small>{image.sizeBytes ? `${Math.max(1, Math.round(image.sizeBytes / 1024))} KB` : '工作区图片'}</small></p></div></article>)}</div> : <div className="asset-empty"><FileImage size={26} /><strong>这个商品还没有图片</strong><p>请将源图片放入对应的“原始商品图”目录，或从画布连接本地 API 后导入。</p></div>}
+        </section>
       )}
 
       {tab === 'facts' && (
         <section className="panel facts-panel">
-          <div className="panel-heading"><div><small>证据层 · 只读</small><h3>已确认商品事实</h3></div><button className="button secondary"><Link2 size={15} />查看来源目录</button></div>
-          <div className="facts-table"><div className="facts-head"><span>字段</span><span>确认值</span><span>证据来源</span><span>状态</span></div>{facts.map((fact) => <div className="fact-row" key={fact.field}><strong>{fact.field}</strong><p>{fact.value}</p><button><FileText size={13} />{fact.source}</button><span className={fact.confidence === '缺失' ? 'missing' : ''}>{fact.confidence === '缺失' ? <AlertCircle size={12} /> : <Check size={12} />}{fact.confidence}</span></div>)}</div>
-          <div className="truth-note"><LockKeyhole size={17} /><p><strong>事实优先于创意</strong><span>冲突或缺失字段不会被常识补全。若要更正，请更新源资料并重新生成指纹。</span></p></div>
+          <div className="panel-heading"><div><small>证据层 · 当前只读</small><h3>商品事实来源</h3></div><span className="count-pill">{product?.assetCount ?? 0} 个源文件</span></div>
+          <div className="truth-note"><LockKeyhole size={17} /><p><strong>事实由本地 Skill 从源文档提取</strong><span>当前网页尚未提供逐字段事实编辑器，因此不会展示伪造的属性、置信度或“已确认”状态。生成时仍以源资料和 prompts.json 为准。</span></p></div>
+          <div className="manifest-preview"><div><FileText size={15} /><span><strong>{sourcePath}</strong><small>更新源文档后，在任务矩阵执行“刷新 Prompt 基线”</small></span></div></div>
         </section>
       )}
 
-      {tab === 'assets' && (
-        <section className="panel source-assets-panel">
-          <div className="panel-heading"><div><small>workspace / 原始商品图 / MF-DEMO-001</small><h3>源素材与文档</h3></div><button className="button secondary"><ImagePlus size={15} />导入文件</button></div>
-          <div className="source-file-grid">{demoAssets.slice(0, 4).map((asset) => <article key={asset.id}><img src={asset.url} alt={asset.name} /><div><FileImage size={15} /><p><strong>{asset.name}</strong><small>{asset.dimensions} · PNG</small></p><MoreHorizontal size={16} /></div></article>)}<article className="document-card"><div className="document-icon"><FileText size={28} /></div><div><FileText size={15} /><p><strong>商品说明.md</strong><small>1.8 KB · UTF-8</small></p><MoreHorizontal size={16} /></div></article></div>
-        </section>
+      {tab === 'references' && (
+        <div className="reference-layout">
+          <section className="panel candidate-panel">
+            <div className="panel-heading"><div><small>{taskPath} / 参考图</small><h3>已发布任务参考</h3></div><span className="count-pill">{references.length} / 5</span></div>
+            <div className="curation-help"><ShieldCheck size={17} /><p><strong>这些图片会真实进入当前任务</strong><span>参考图用于锁定商品身份与组合关系，不作为原构图模板。</span></p></div>
+            {references.length ? <div className="candidate-grid">{references.map((image, index) => <article key={image.relativePath ?? image.url} className="candidate-card selected"><div className="candidate-image"><img src={image.url} alt={image.name} /><span className="candidate-check"><Check size={14} /></span></div><div><strong>{image.name}</strong><small>{index === 0 ? '身份锚点' : '任务参考'}</small></div></article>)}</div> : <div className="asset-empty"><AlertCircle size={26} /><strong>当前任务没有已发布参考图</strong><p>请先运行 Prepare，或按 Skill 目录协议补全“参考图”和 reference_manifest.json。</p></div>}
+          </section>
+          <aside className="panel manifest-panel">
+            <div className="panel-heading"><div><small>任务单一事实源</small><h3>参考清单状态</h3></div><span className={`count-pill ${task?.hasReferenceManifest ? '' : 'warning'}`}>{task?.hasReferenceManifest ? '已存在' : '缺失'}</span></div>
+            <div className="manifest-preview"><div><FileText size={15} /><span><strong>reference_manifest.json</strong><small>{task?.hasReferenceManifest ? '生成前会由 Skill 再次验证' : '缺失时真实生成会被阻止'}</small></span></div></div>
+            <div className="manifest-checks"><p className={references.length ? '' : 'warning'}>{references.length ? <Check size={13} /> : <AlertCircle size={13} />}{references.length ? `${references.length} 张参考图已被工作区扫描` : '至少需要一张身份参考图'}</p><p className={task?.hasPrompts ? '' : 'warning'}>{task?.hasPrompts ? <Check size={13} /> : <AlertCircle size={13} />}{task?.hasPrompts ? `${task.promptCount} 份 Prompt 已准备` : 'prompts.json 尚未准备'}</p></div>
+            <small className="publish-note"><LockKeyhole size={11} />网页当前不修改清单，避免出现“已发布”但磁盘未落地的状态。</small>
+          </aside>
+        </div>
       )}
     </div>
   )

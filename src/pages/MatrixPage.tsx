@@ -70,6 +70,7 @@ export function MatrixPage() {
   const setSelectedTask = useAppStore((state) => state.setSelectedTask)
   const setSelectedShot = useAppStore((state) => state.setSelectedShot)
   const setActiveRunId = useAppStore((state) => state.setActiveRunId)
+  const refreshWorkspace = useAppStore((state) => state.refreshWorkspace)
   const notify = useAppStore((state) => state.notify)
 
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set())
@@ -123,7 +124,7 @@ export function MatrixPage() {
   const openCell = (task: string, shot: ShotType) => {
     setSelectedTask(task)
     setSelectedShot(shot)
-    navigate('/studio')
+    navigate(`/studio?product=${encodeURIComponent(product?.id ?? selectedProduct)}&task=${encodeURIComponent(task)}&shot=${encodeURIComponent(shot)}`)
   }
 
   const prepare = async () => {
@@ -135,6 +136,7 @@ export function MatrixPage() {
     setPreparing(true)
     try {
       await prepareWorkflow(product.id)
+      await refreshWorkspace()
       notify({ title: 'Prompt 基线已刷新', detail: `${product.id} 的任务资料已重新扫描。`, tone: 'success' })
     } catch (error) {
       notify({ title: 'Prompt 准备失败', detail: error instanceof Error ? error.message : '请检查 Skill 日志', tone: 'warning' })

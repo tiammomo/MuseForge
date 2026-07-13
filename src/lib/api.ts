@@ -113,6 +113,7 @@ function normalizeTask(value: unknown): WorkspaceTask {
     hasPrompts: Boolean(item.hasPrompts ?? item.has_prompts),
     promptCount: asNumber(item.promptCount ?? item.prompt_count),
     referenceCount: asNumber(item.referenceCount ?? item.reference_count),
+    references: Array.isArray(item.references) ? item.references.map(normalizeImage) : [],
     hasReferenceManifest: Boolean(item.hasReferenceManifest ?? item.has_reference_manifest),
     generatedImageCount: asNumber(item.generatedImageCount ?? item.generated_image_count),
     shots,
@@ -149,6 +150,7 @@ function normalizeWorkspace(value: unknown): WorkspaceSnapshot {
         : 'draft' as const,
       thumbnail: asString(product.thumbnail) || undefined,
       updatedAt: asString(product.updatedAt ?? product.updated_at) || undefined,
+      images: Array.isArray(product.images) ? product.images.map(normalizeImage) : [],
     }
   }) : []
   const accessories = Array.isArray(item.accessories) ? item.accessories.map((value) => {
@@ -295,6 +297,21 @@ export async function loadCanvas(id: string): Promise<Record<string, unknown> | 
     if (error instanceof ApiError && error.status === 404) return undefined
     throw error
   }
+}
+
+export async function importWorkspaceAsset(file: File, product: string): Promise<WorkspaceImage> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error('无法读取本地图片'))
+    reader.readAsDataURL(file)
+  })
+  const result = await request<unknown>('/api/workspace/assets/import', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ product, filename: file.name, dataUrl }),
+  })
+  return normalizeImage(result)
 }
 
 export async function createGenerationRun(payload: GenerationRunRequest): Promise<GenerationRun> {

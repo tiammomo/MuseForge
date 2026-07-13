@@ -16,6 +16,7 @@ export interface WorkspaceProduct {
   readiness: 'draft' | 'blocked' | 'ready' | 'stale'
   thumbnail?: string
   updatedAt?: string
+  images?: WorkspaceImage[]
 }
 
 export interface WorkspaceSnapshot {
@@ -59,6 +60,7 @@ export interface WorkspaceTask {
   hasPrompts: boolean
   promptCount: number
   referenceCount: number
+  references?: WorkspaceImage[]
   hasReferenceManifest: boolean
   generatedImageCount: number
   shots: Record<ShotType, WorkspaceShotSummary>
@@ -132,6 +134,7 @@ export interface GenerationRunRequest {
   shots: ShotType[]
   variants: number
   concurrency: number
+  creativeBrief?: PromptDraft
 }
 
 export interface GenerationRun {

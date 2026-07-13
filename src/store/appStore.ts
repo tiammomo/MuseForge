@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { CanvasInsertRequest, GenerationJob, ShotType, WorkspaceSnapshot } from '../types'
 import { initialJobs } from '../lib/demo'
+import { loadWorkspace } from '../lib/api'
 
 type Toast = { id: string; title: string; detail?: string; tone?: 'success' | 'warning' | 'neutral' }
 
@@ -16,6 +17,7 @@ interface AppState {
   canvasInsertRequest?: CanvasInsertRequest
   toasts: Toast[]
   setWorkspace: (workspace: WorkspaceSnapshot, demoMode: boolean) => void
+  refreshWorkspace: () => Promise<void>
   setApiOnline: (value: boolean) => void
   setSelectedProduct: (id: string) => void
   setSelectedTask: (id: string) => void
@@ -38,6 +40,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   jobs: initialJobs,
   toasts: [],
   setWorkspace: (workspace, demoMode) => set({ workspace, demoMode }),
+  refreshWorkspace: async () => {
+    const workspace = await loadWorkspace()
+    set({ workspace: workspace.data, demoMode: workspace.demo })
+  },
   setApiOnline: (apiOnline) => set({ apiOnline }),
   setSelectedProduct: (selectedProduct) => set({ selectedProduct }),
   setSelectedTask: (selectedTask) => set({ selectedTask }),

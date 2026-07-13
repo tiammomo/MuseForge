@@ -119,9 +119,17 @@ curl -X POST http://127.0.0.1:38120/api/generation-runs \
     "tasks": ["单品", "旅行收纳袋"],
     "shots": ["main", "lifestyle-scene"],
     "variants": 4,
-    "concurrency": 2
+    "concurrency": 2,
+    "creativeBrief": {
+      "environment": "Bright neutral tabletop with soft daylight.",
+      "composition": "Keep the complete product centered with safe margins.",
+      "negatives": "No unrelated props or invented features.",
+      "visibleText": "READY TO SHIP"
+    }
   }'
 ```
+
+`creativeBrief` is optional. It is saved with the run and appended to the existing verified prompt; it does not overwrite task facts, reference policy, physical constraints, or compliance rules.
 
 The endpoint returns `202 Accepted`. When live generation is disabled it returns `403` and does not create a run.
 
@@ -141,6 +149,7 @@ Candidates never write directly into formal task output folders:
 ```text
 workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-01.png
 workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-02.png
+workspace/.museforge/runs/<run-id>/run-spec.json
 ...
 ```
 
@@ -211,6 +220,7 @@ A staged candidate is promoted before being inserted. The handoff includes:
 - insertion mode: background or layer.
 
 Studio loads the matching `product + task + shot` canvas and inserts the asset after hydration completes.
+The browser URL carries the same context, so the exact canvas can be refreshed or linked directly.
 
 ## 10. Storage guarantees
 

@@ -33,13 +33,11 @@ import {
   Trash2,
   Undo2,
   WandSparkles,
-  X,
   Zap,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ARTBOARD, StudioCanvas, type CanvasViewport, type StudioCanvasHandle } from '../components/StudioCanvas'
-import { demoAssets } from '../lib/demo'
-import { createGenerationRun, listCandidates, loadCanvas, previewWorkflow, saveCanvas } from '../lib/api'
+import { createGenerationRun, importWorkspaceAsset, listCandidates, loadCanvas, previewWorkflow, saveCanvas } from '../lib/api'
 import { useAppStore } from '../store/appStore'
 import type { AssetItem, CanvasNode, PromptDraft, ShotType } from '../types'
 import '../studio-enhancements.css'
@@ -60,12 +58,14 @@ const outputByShot: Record<ShotType, string> = {
   comparison: '/demo/interior.png',
 }
 
-const defaultPrompt: PromptDraft = {
-  subject: '完整展示透明喷雾瓶，保持真实轮廓、泵头结构、玻璃质感与比例，不新增任何部件。',
-  environment: '明亮白天的自然梳妆台场景，柔和左侧窗光，浅木色与安静绿植形成克制的生活氛围。',
-  composition: '商品居中偏右，占画面主要视觉权重；近景叶片形成前景引导，留出左上文案安全区。',
-  negatives: '夜景、儿童、品牌 Logo、认证标识、无线符号、插头、中文文字、悬浮、变形、假接触。',
-  visibleText: 'HYDRATION, REIMAGINED.',
+function defaultPrompt(product: string): PromptDraft {
+  return {
+    subject: `${product} · 商品身份、结构、数量与材质以工作区事实和参考图为准`,
+    environment: '',
+    composition: '',
+    negatives: '',
+    visibleText: '',
+  }
 }
 
 type SaveState = 'loading' | 'dirty' | 'saving' | 'saved' | 'load-error' | 'save-error'
@@ -135,7 +135,8 @@ function canvasDocumentId(product: string, task: string, shot: ShotType): string
   return `${product.slice(0, 30)}-${task.slice(0, 30)}-${shot}-${shortHash(identity)}`
 }
 
-function initialNodes(shot: ShotType): CanvasNode[] {
+function initialNodes(shot: ShotType, demoMode = false): CanvasNode[] {
+  if (!demoMode) return []
   return [
     { id: 'scene-background', name: '画板底图', locked: true, type: 'image', src: outputByShot[shot], x: ARTBOARD.x, y: ARTBOARD.y, width: ARTBOARD.width, height: ARTBOARD.height },
     { id: 'headline', name: '主标题', type: 'text', text: 'HYDRATION, REIMAGINED.', x: 344, y: 184, width: 445, fontSize: 25, fontStyle: 'bold', fill: '#173f38' },
@@ -167,7 +168,12 @@ function nodeLabel(node: CanvasNode): string {
 
 function AssetPanel({
   onAdd,
+  onImport,
+  projectAssets,
   resultAssets,
+  product,
+  taskLabel,
+  referenceCount,
   nodes,
   selectedIds,
   onSelect,
@@ -175,7 +181,12 @@ function AssetPanel({
   onMoveLayer,
 }: {
   onAdd: (asset: AssetItem) => void
+  onImport: (file: File) => void
+  projectAssets: AssetItem[]
   resultAssets: AssetItem[]
+  product: string
+  taskLabel: string
+  referenceCount: number
   nodes: CanvasNode[]
   selectedIds: string[]
   onSelect: (id: string, additive?: boolean) => void
@@ -185,13 +196,11 @@ function AssetPanel({
   const [tab, setTab] = useState<'assets' | 'results' | 'layers'>('assets')
   const [editingId, setEditingId] = useState<string>()
   const [draftName, setDraftName] = useState('')
-  const filtered = tab === 'results' ? resultAssets : demoAssets
+  const filtered = tab === 'results' ? resultAssets : projectAssets
 
   const importFile = (file?: File) => {
     if (!file?.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.onload = () => onAdd({ id: `local-${Date.now()}`, name: file.name, url: String(reader.result), kind: 'product' })
-    reader.readAsDataURL(file)
+    onImport(file)
   }
 
   const finishRename = (node: CanvasNode) => {
@@ -220,8 +229,8 @@ function AssetPanel({
                 <i><Plus size={13} /></i>
               </button>
             ))}
-          </div> : <div className="asset-empty"><ImagePlus size={24} /><strong>当前画布还没有保留结果</strong><p>在审核页选择满意候选后，会自动出现在这里。</p></div>}
-          {tab === 'assets' && <><div className="asset-section-title"><span>商品事实</span><LockKeyhole size={13} /></div><div className="fact-mini-card"><strong>MF-DEMO-001</strong><p>透明喷雾瓶 · 深绿色泵头<br />完整单件 · 竖直独立摆放</p><button>查看 8 条证据 <Eye size={13} /></button></div></>}
+          </div> : <div className="asset-empty"><ImagePlus size={24} /><strong>{tab === 'results' ? '当前画布还没有保留结果' : '当前商品还没有可用图片'}</strong><p>{tab === 'results' ? '在审核页选择满意候选后，会自动出现在这里。' : '将图片导入当前商品工作区后即可加入画布。'}</p></div>}
+          {tab === 'assets' && <><div className="asset-section-title"><span>工作区事实</span><LockKeyhole size={13} /></div><div className="fact-mini-card"><strong>{product}</strong><p>{taskLabel} · {referenceCount} 张任务参考图<br />生成时以 prompts.json 与 reference_manifest.json 为准</p></div></>}
         </>
       ) : (
         <div className="layer-panel">
@@ -251,6 +260,11 @@ function AssetPanel({
 function Inspector({
   prompt,
   setPrompt,
+  referenceAssets,
+  referenceCount,
+  variants,
+  setVariants,
+  preflightState,
   selectedNodes,
   onUpdateSelected,
   onGenerate,
@@ -264,6 +278,11 @@ function Inspector({
 }: {
   prompt: PromptDraft
   setPrompt: (value: PromptDraft) => void
+  referenceAssets: AssetItem[]
+  referenceCount: number
+  variants: number
+  setVariants: (value: number) => void
+  preflightState: 'idle' | 'checking' | 'passed' | 'failed'
   selectedNodes: CanvasNode[]
   onUpdateSelected: (patch: Partial<CanvasNode>) => void
   onGenerate: () => void
@@ -295,18 +314,16 @@ function Inspector({
       {tab === 'generate' && (
         <div className="inspector-scroll">
           <div className="inspector-section">
-            <div className="section-heading"><span>参考图</span><small>2 / 5</small></div>
-            <div className="reference-strip">
-              <div><img src="/demo/product-cutout.png" alt="主商品参考" /><span>主商品</span></div>
-              <div><img src="/demo/product-studio.png" alt="构图参考" /><span>构图</span></div>
-              <button><Plus size={18} /><small>添加</small></button>
-            </div>
-            <p className="helper-copy"><LockKeyhole size={12} />参考图仅锁定商品身份，不复制原构图与背景。</p>
+            <div className="section-heading"><span>任务参考图</span><small>{referenceCount} / 5</small></div>
+            {referenceAssets.length ? <div className="reference-strip">
+              {referenceAssets.map((asset, index) => <div key={asset.id}><img src={asset.url} alt={asset.name} /><span>{index === 0 ? '身份锚点' : `参考 ${index + 1}`}</span></div>)}
+            </div> : <div className="reference-empty"><CircleAlert size={16} />当前任务没有已发布参考图</div>}
+            <p className="helper-copy"><LockKeyhole size={12} />来源：任务目录 reference_manifest.json；画布不会复制图片数据。</p>
           </div>
 
           <div className="inspector-section prompt-fields">
-            <div className="section-heading"><span>结构化 Prompt</span><button>展开 JSON</button></div>
-            <label><span>商品主体 <em>已锁定</em></span><textarea value={prompt.subject} onChange={(event) => setPrompt({ ...prompt, subject: event.target.value })} rows={3} /></label>
+            <div className="section-heading"><span>本次创意指令</span><small>将写入运行快照</small></div>
+            <label><span>商品主体 <em>事实锁定</em></span><textarea value={prompt.subject} disabled rows={3} /></label>
             <label><span>场景与氛围</span><textarea value={prompt.environment} onChange={(event) => setPrompt({ ...prompt, environment: event.target.value })} rows={3} /></label>
             <label><span>构图</span><textarea value={prompt.composition} onChange={(event) => setPrompt({ ...prompt, composition: event.target.value })} rows={2} /></label>
             <label><span>画面文字</span><input value={prompt.visibleText} onChange={(event) => setPrompt({ ...prompt, visibleText: event.target.value })} /></label>
@@ -314,13 +331,13 @@ function Inspector({
           </div>
 
           <div className="inspector-section">
-            <button className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}><span>生成参数</span><span>Image2 · 1:1 · Medium</span><ChevronDown size={15} className={advanced ? 'rotated' : ''} /></button>
-            {advanced && <div className="advanced-grid"><label>模型<select defaultValue="image2"><option value="image2">GPT Image 2</option><option value="comfy">ComfyUI · Local</option></select></label><label>候选数<select defaultValue="4"><option>2</option><option>4</option><option>6</option></select></label><label>尺寸<select><option>1024 × 1024</option></select></label><label>质量<select><option>Medium</option><option>High</option></select></label></div>}
+            <button className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}><span>生成参数</span><span>{variants} 个候选 · 服务端 Provider</span><ChevronDown size={15} className={advanced ? 'rotated' : ''} /></button>
+            {advanced && <div className="advanced-grid truthful"><label>候选数<select value={variants} onChange={(event) => setVariants(Number(event.target.value))}><option value="2">2</option><option value="4">4</option><option value="6">6</option></select></label><div className="server-parameter"><span>模型 / 尺寸 / 质量</span><strong>由本地 .env 与 Skill 决定</strong><small>运行结果会记录实际模型与质量。</small></div></div>}
           </div>
 
-          <div className="preflight-card">
-            <div><span><Check size={13} /></span><p><strong>4 项硬门槛已通过</strong><small>商品事实、参考边界、场景规则、文字语言</small></p></div>
-            <button onClick={onPreflight}>重新检查</button>
+          <div className={`preflight-card ${preflightState}`}>
+            <div><span>{preflightState === 'failed' ? <CircleAlert size={13} /> : <Check size={13} />}</span><p><strong>{preflightState === 'passed' ? 'Skill 门槛检查已通过' : preflightState === 'failed' ? '存在生成阻塞项' : preflightState === 'checking' ? '正在检查任务文件' : '生成前需要执行门槛检查'}</strong><small>商品事实、参考清单、Prompt 结构与图型范围</small></p></div>
+            <button onClick={onPreflight} disabled={preflightState === 'checking'}>{preflightState === 'checking' ? '检查中' : '开始检查'}</button>
           </div>
         </div>
       )}
@@ -347,7 +364,7 @@ function Inspector({
 
       <div className="generate-footer">
         <button className="generate-button" onClick={onGenerate} disabled={generating}>
-          {generating ? <><span className="spinner" />正在加入队列</> : <><Sparkles size={18} />生成 4 个候选</>}
+          {generating ? <><span className="spinner" />正在加入队列</> : <><Sparkles size={18} />生成 {variants} 个候选</>}
         </button>
         <small><kbd>⌘</kbd><kbd>↵</kbd> 入队 · 候选仅在本地暂存</small>
       </div>
@@ -357,6 +374,7 @@ function Inspector({
 
 export function StudioPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const selectedProduct = useAppStore((state) => state.selectedProduct)
   const selectedTask = useAppStore((state) => state.selectedTask)
   const selectedShot = useAppStore((state) => state.selectedShot)
@@ -372,17 +390,20 @@ export function StudioPage() {
   const apiOnline = useAppStore((state) => state.apiOnline)
   const demoMode = useAppStore((state) => state.demoMode)
   const workspace = useAppStore((state) => state.workspace)
+  const refreshWorkspace = useAppStore((state) => state.refreshWorkspace)
   const canvasInsertRequest = useAppStore((state) => state.canvasInsertRequest)
   const consumeCanvasInsert = useAppStore((state) => state.consumeCanvasInsert)
 
-  const [nodes, setNodes] = useState<CanvasNode[]>(() => initialNodes(selectedShot))
+  const [nodes, setNodes] = useState<CanvasNode[]>([])
   const [past, setPast] = useState<CanvasNode[][]>([])
   const [future, setFuture] = useState<CanvasNode[][]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [tool, setTool] = useState<'select' | 'hand'>('select')
   const [spaceHand, setSpaceHand] = useState(false)
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, zoom: 0.78, mode: 'fit' })
-  const [prompt, setPromptState] = useState(defaultPrompt)
+  const [prompt, setPromptState] = useState(() => defaultPrompt(selectedProduct))
+  const [variants, setVariants] = useState(4)
+  const [preflightState, setPreflightState] = useState<'idle' | 'checking' | 'passed' | 'failed'>('idle')
   const [generating, setGenerating] = useState(false)
   const [resultAssets, setResultAssets] = useState<AssetItem[]>([])
   const [saveState, setSaveState] = useState<SaveState>('loading')
@@ -399,6 +420,8 @@ export function StudioPage() {
   const insertInFlight = useRef<string | undefined>(undefined)
   const switchSequence = useRef(0)
   const canvasRef = useRef<StudioCanvasHandle>(null)
+  const urlContextReady = useRef(false)
+  const skipNextUrlSync = useRef(false)
   const canvasId = canvasDocumentId(selectedProduct, selectedTask, selectedShot)
   const hydrationKey = `${canvasId}-${reloadToken}`
   const renderedHydrationKey = useRef(hydrationKey)
@@ -409,6 +432,72 @@ export function StudioPage() {
   const activeCanvasId = useRef(canvasId)
   const activeTool = spaceHand ? 'hand' : tool
 
+  const selectedProductRecord = workspace?.products.find((product) => product.id === selectedProduct)
+  const selectedTaskRecord = workspace?.combinations
+    ?.find((combination) => combination.id === selectedProduct)
+    ?.tasks.find((task) => task.name === selectedTask)
+  const projectAssets = useMemo<AssetItem[]>(() => {
+    const source = (selectedProductRecord?.images ?? []).map((image) => ({
+      id: image.relativePath ?? image.url,
+      name: image.name,
+      url: image.url,
+      kind: 'product' as const,
+    }))
+    const references = (selectedTaskRecord?.references ?? []).map((image) => ({
+      id: image.relativePath ?? image.url,
+      name: image.name,
+      url: image.url,
+      kind: 'reference' as const,
+    }))
+    return [...source, ...references.filter((reference) => !source.some((asset) => asset.id === reference.id))]
+  }, [selectedProductRecord?.images, selectedTaskRecord?.references])
+  const referenceAssets = useMemo<AssetItem[]>(() => (selectedTaskRecord?.references ?? []).map((image) => ({
+    id: image.relativePath ?? image.url,
+    name: image.name,
+    url: image.url,
+    kind: 'reference',
+  })), [selectedTaskRecord?.references])
+
+  useEffect(() => {
+    if (!workspace || urlContextReady.current) return
+    const requestedProduct = searchParams.get('product')
+    const product = workspace.products.some((item) => item.id === requestedProduct)
+      ? requestedProduct as string
+      : selectedProduct
+    const tasks = workspace.combinations?.find((item) => item.id === product)?.tasks ?? []
+    const requestedTask = searchParams.get('task')
+    const task = tasks.some((item) => item.name === requestedTask)
+      ? requestedTask as string
+      : tasks.some((item) => item.name === selectedTask) ? selectedTask : tasks[0]?.name ?? selectedTask
+    const requestedShot = searchParams.get('shot') as ShotType | null
+    const shot = requestedShot && shotOptions.some((item) => item.id === requestedShot)
+      ? requestedShot
+      : selectedShot
+    setSelectedProduct(product)
+    setSelectedTask(task)
+    setSelectedShot(shot)
+    urlContextReady.current = true
+    skipNextUrlSync.current = true
+    const resolved = new URLSearchParams(searchParams)
+    resolved.set('product', product)
+    resolved.set('task', task)
+    resolved.set('shot', shot)
+    if (resolved.toString() !== searchParams.toString()) setSearchParams(resolved, { replace: true })
+  }, [searchParams, selectedProduct, selectedShot, selectedTask, setSearchParams, setSelectedProduct, setSelectedShot, setSelectedTask, workspace])
+
+  useEffect(() => {
+    if (!urlContextReady.current) return
+    if (skipNextUrlSync.current) {
+      skipNextUrlSync.current = false
+      return
+    }
+    const next = new URLSearchParams(searchParams)
+    next.set('product', selectedProduct)
+    next.set('task', selectedTask)
+    next.set('shot', selectedShot)
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true })
+  }, [searchParams, selectedProduct, selectedShot, selectedTask, setSearchParams])
+
   const selectLayer = (id: string, additive = false) => {
     setSelectedIds((current) => additive
       ? current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
@@ -416,6 +505,7 @@ export function StudioPage() {
   }
 
   useEffect(() => {
+    if (!workspace) return
     let cancelled = false
     if (!apiOnline || demoMode) {
       setResultAssets([])
@@ -460,6 +550,7 @@ export function StudioPage() {
   const setPrompt = (next: PromptDraft) => {
     promptRef.current = next
     setPromptState(next)
+    setPreflightState('idle')
     markDirty()
   }
 
@@ -540,10 +631,11 @@ export function StudioPage() {
         const stored = apiOnline ? await loadCanvas(canvasId) : undefined
         if (cancelled) return
         const source = cached?.pendingSync ? cached.snapshot : (stored ?? cached?.snapshot)
-        const nextNodes = Array.isArray(source?.nodes) ? source.nodes as CanvasNode[] : initialNodes(selectedShot)
+        const promptDefaults = defaultPrompt(selectedProduct)
+        const nextNodes = Array.isArray(source?.nodes) ? source.nodes as CanvasNode[] : initialNodes(selectedShot, demoMode)
         const nextPrompt = source?.prompt && typeof source.prompt === 'object'
-          ? { ...defaultPrompt, ...source.prompt as PromptDraft }
-          : defaultPrompt
+          ? { ...promptDefaults, ...source.prompt as PromptDraft }
+          : promptDefaults
         const nextViewport = normalizeViewport(source?.viewport) ?? { x: 0, y: 0, zoom: 0.78, mode: 'fit' as const }
         nodesRef.current = nextNodes
         promptRef.current = nextPrompt
@@ -574,8 +666,9 @@ export function StudioPage() {
       } catch (error) {
         if (!cancelled) {
           const fallback = cached?.snapshot
-          const nextNodes = Array.isArray(fallback?.nodes) ? fallback.nodes : initialNodes(selectedShot)
-          const nextPrompt = fallback?.prompt && typeof fallback.prompt === 'object' ? { ...defaultPrompt, ...fallback.prompt } : defaultPrompt
+          const promptDefaults = defaultPrompt(selectedProduct)
+          const nextNodes = Array.isArray(fallback?.nodes) ? fallback.nodes : initialNodes(selectedShot, demoMode)
+          const nextPrompt = fallback?.prompt && typeof fallback.prompt === 'object' ? { ...promptDefaults, ...fallback.prompt } : promptDefaults
           const nextViewport = normalizeViewport(fallback?.viewport) ?? { x: 0, y: 0, zoom: 0.78, mode: 'fit' as const }
           nodesRef.current = nextNodes
           promptRef.current = nextPrompt
@@ -608,7 +701,7 @@ export function StudioPage() {
       writeCanvasCache(canvasId, snapshot, true)
       void persistCanvas(canvasId, snapshot, revision, false)
     }
-  }, [apiOnline, canvasId, notify, persistCanvas, reloadToken, selectedShot, selectedTask])
+  }, [apiOnline, canvasId, demoMode, notify, persistCanvas, reloadToken, selectedProduct, selectedShot, selectedTask, workspace])
 
   useEffect(() => {
     const cacheBeforeUnload = () => {
@@ -696,6 +789,26 @@ export function StudioPage() {
     notify({ title: mode === 'background' ? '已设为画板底图' : '素材已加入画布', detail: asset.name, tone: 'success' })
     return true
   }, [commitNodes, notify])
+
+  const importAsset = useCallback(async (file: File) => {
+    if (!apiOnline || demoMode) {
+      notify({ title: '需要连接本地工作区', detail: '素材不会以内嵌 base64 形式写入画布；连接 API 后可稳定导入。', tone: 'warning' })
+      return
+    }
+    try {
+      const imported = await importWorkspaceAsset(file, selectedProduct)
+      const asset: AssetItem = {
+        id: imported.relativePath ?? imported.url,
+        name: file.name,
+        url: imported.url,
+        kind: 'product',
+      }
+      await refreshWorkspace()
+      await addAsset(asset)
+    } catch (error) {
+      notify({ title: '素材导入失败', detail: error instanceof Error ? error.message : '请检查图片格式与大小', tone: 'warning' })
+    }
+  }, [addAsset, apiOnline, demoMode, notify, refreshWorkspace, selectedProduct])
 
   useEffect(() => {
     const request = canvasInsertRequest
@@ -832,11 +945,25 @@ export function StudioPage() {
     setGenerating(true)
     if (apiOnline && !demoMode && workspace?.liveGenerationEnabled) {
       try {
-        const run = await createGenerationRun({ product: selectedProduct, tasks: [selectedTask], shots: [selectedShot], variants: 4, concurrency: 1 })
+        setPreflightState('checking')
+        await previewWorkflow(selectedProduct, selectedShot, selectedTask)
+        setPreflightState('passed')
+        if (dirtyCanvases.current.has(activeCanvasId.current) && !(await save(false))) {
+          throw new Error('当前画布保存失败，已停止提交生成任务')
+        }
+        const run = await createGenerationRun({
+          product: selectedProduct,
+          tasks: [selectedTask],
+          shots: [selectedShot],
+          variants,
+          concurrency: 1,
+          creativeBrief: promptRef.current,
+        })
         setActiveRunId(run.id)
-        notify({ title: '已交给本地 Skill 执行', detail: `运行 ${run.id} · 4 个候选仅本地暂存`, tone: 'success' })
+        notify({ title: '已交给本地 Skill 执行', detail: `运行 ${run.id} · ${variants} 个候选 · 创意指令已固化`, tone: 'success' })
         navigate(`/queue?run=${encodeURIComponent(run.id)}`)
       } catch (error) {
+        setPreflightState('failed')
         notify({ title: '无法启动本地生成', detail: error instanceof Error ? error.message : '请检查 Skill 与参考图门槛', tone: 'warning' })
       } finally {
         setGenerating(false)
@@ -853,7 +980,7 @@ export function StudioPage() {
     notify({ title: '演示任务（未调用生图服务）', detail: '用于预览队列与审核交互', tone: 'neutral' })
     window.setTimeout(() => { updateJob(id, { status: 'running', progress: 68 }); setGenerating(false) }, 500)
     window.setTimeout(() => updateJob(id, { status: 'succeeded', progress: 100, thumbnail: outputByShot[selectedShot] }), 2200)
-  }, [addJob, apiOnline, demoMode, generating, navigate, notify, saveState, selectedProduct, selectedShot, selectedTask, setActiveRunId, updateJob, workspace?.liveGenerationEnabled])
+  }, [addJob, apiOnline, demoMode, generating, navigate, notify, save, saveState, selectedProduct, selectedShot, selectedTask, setActiveRunId, updateJob, variants, workspace?.liveGenerationEnabled])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -892,13 +1019,17 @@ export function StudioPage() {
 
   const preflight = async () => {
     if (!apiOnline || demoMode) {
-      notify({ title: '演示预检通过', detail: '未调用 Skill；连接本地 API 后可执行真实门槛检查', tone: 'neutral' })
+      setPreflightState('idle')
+      notify({ title: '未执行真实预检', detail: '连接本地 API 后才能检查工作区 Prompt 与参考图清单', tone: 'neutral' })
       return
     }
+    setPreflightState('checking')
     try {
       await previewWorkflow(selectedProduct, selectedShot, selectedTask)
+      setPreflightState('passed')
       notify({ title: 'Skill 预检通过', detail: '参考图与 Prompt 结构有效', tone: 'success' })
     } catch (error) {
+      setPreflightState('failed')
       notify({ title: '预检发现阻塞项', detail: error instanceof Error ? error.message : '请检查参考图清单', tone: 'warning' })
     }
   }
@@ -967,14 +1098,14 @@ export function StudioPage() {
             </div>
           </div>
         )}
-        <AssetPanel onAdd={(asset) => { void addAsset(asset) }} resultAssets={resultAssets} nodes={nodes} selectedIds={selectedIds} onSelect={selectLayer} onUpdateNode={updateNode} onMoveLayer={moveLayer} />
+        <AssetPanel onAdd={(asset) => { void addAsset(asset) }} onImport={(file) => { void importAsset(file) }} projectAssets={projectAssets} resultAssets={resultAssets} product={selectedProduct} taskLabel={selectedTask} referenceCount={selectedTaskRecord?.referenceCount ?? 0} nodes={nodes} selectedIds={selectedIds} onSelect={selectLayer} onUpdateNode={updateNode} onMoveLayer={moveLayer} />
         <section className="canvas-column">
           <div className="floating-toolbar">
             <button className={activeTool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="选择工具 (V)"><MousePointer2 size={17} /></button>
             <button className={activeTool === 'hand' ? 'active' : ''} onClick={() => setTool('hand')} title="抓手工具 (H / Space)"><Hand size={17} /></button>
             <span />
             <button onClick={addText} title="添加文字"><TextCursorInput size={17} /></button>
-            <button onClick={() => { void addAsset(demoAssets[0]) }} title="添加图片"><ImagePlus size={17} /></button>
+            <button onClick={() => { if (projectAssets[0]) void addAsset(projectAssets[0]) }} disabled={!projectAssets.length} title="添加项目图片"><ImagePlus size={17} /></button>
             <span />
             <button onClick={undo} disabled={!past.length} title="撤销"><Undo2 size={17} /></button>
             <button onClick={redo} disabled={!future.length} title="重做"><Redo2 size={17} /></button>
@@ -986,9 +1117,9 @@ export function StudioPage() {
           <div className="canvas-hint"><Grip size={13} />空白拖拽框选 · Shift 多选 · 自动吸附 · 方向键微移</div>
           <button className="queue-peek" onClick={() => navigate(activeRunId ? `/queue?run=${encodeURIComponent(activeRunId)}` : '/queue')}><span><i />{activeRunId ? `真实运行 ${activeRunId.slice(0, 8)} 已接入队列` : demoMode && jobs.filter((job) => job.status === 'running').length ? `${jobs.filter((job) => job.status === 'running').length} 个演示任务生成中` : '本地候选暂存已启用'}</span><strong>查看运行队列 <ChevronDown size={14} /></strong></button>
         </section>
-        <Inspector prompt={prompt} setPrompt={setPrompt} selectedNodes={selectedNodes} onUpdateSelected={updateSelected} onGenerate={() => { void generate() }} onPreflight={() => { void preflight() }} onAlign={alignSelected} onDistribute={distributeSelected} onLayerUp={() => primarySelectedId && moveLayer(primarySelectedId, 'up')} onLayerDown={() => primarySelectedId && moveLayer(primarySelectedId, 'down')} generating={generating} canvasVersion={canvasVersion} />
+        <Inspector prompt={prompt} setPrompt={setPrompt} referenceAssets={referenceAssets} referenceCount={selectedTaskRecord?.referenceCount ?? 0} variants={variants} setVariants={setVariants} preflightState={preflightState} selectedNodes={selectedNodes} onUpdateSelected={updateSelected} onGenerate={() => { void generate() }} onPreflight={() => { void preflight() }} onAlign={alignSelected} onDistribute={distributeSelected} onLayerUp={() => primarySelectedId && moveLayer(primarySelectedId, 'up')} onLayerDown={() => primarySelectedId && moveLayer(primarySelectedId, 'down')} generating={generating} canvasVersion={canvasVersion} />
       </div>
-      <div className="studio-warning"><ScanSearch size={14} /><span>场景图物理交互：独立摆放 · 完整底座接触平面 · 重心竖直稳定</span><button><CircleAlert size={13} />查看计划</button><X size={13} /></div>
+      <div className="studio-warning"><ScanSearch size={14} /><span>生成依据：任务 prompts.json + reference_manifest.json + 当前画布创意指令</span><strong>{selectedTaskRecord?.hasReferenceManifest ? '参考清单已发布' : '参考清单缺失'}</strong></div>
     </div>
   )
 }

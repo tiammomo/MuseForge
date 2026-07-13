@@ -48,6 +48,7 @@ The built-in e-commerce matrix covers:
 - Product/task/shot matrix with readiness checks and blocked-item prevention.
 - Asynchronous generation runs backed by FastAPI and SQLite.
 - Structured workflow events and browser polling for real progress visibility.
+- Immutable per-run `run-spec.json` snapshots for canvas-authored creative direction.
 - Run-level candidate staging under `workspace/.museforge/runs/`.
 - Four-up candidate review, multi-select keep, and confirmed cleanup of rejected images.
 - Atomic promotion of kept candidates into the formal `workspace/组合/` library.
@@ -67,10 +68,11 @@ The built-in e-commerce matrix covers:
 - Image and text layers with drag, resize, rotate, duplicate, delete, naming, visibility, locking, and ordering.
 - Marquee selection, Shift multi-select, grouped movement, artboard snapping, batch alignment, and equal distribution.
 - Select and hand tools, pointer-centered zoom, fit-to-artboard, and keyboard nudging.
-- A real retained-results shelf backed by promoted review candidates, plus direct local-image import.
+- A real retained-results shelf backed by promoted review candidates, plus stable workspace-backed local-image import.
 - Locked scene background and protected background properties.
-- Structured prompt editor for subject, environment, composition, visible text, and negative constraints.
+- Structured creative-brief editor whose environment, composition, visible text, and negative constraints are appended to the verified Skill prompt at run time.
 - Independent documents for every `product + task + shot` combination.
+- Shareable `/studio?product=…&task=…&shot=…` context that restores the exact canvas.
 - SQLite autosave, session cache, offline recovery, serial save queues, and load-failure protection.
 - Fixed 1024 × 1024 PNG export without guides, selection boxes, or transformers.
 
@@ -179,6 +181,8 @@ Candidates are not formal assets when generated:
 workspace/.museforge/runs/<run-id>/<product>/<task>/<shot>/candidate-XX.png
 ```
 
+Each run also contains `run-spec.json`. The backend writes this file from the validated request before launching the Skill. Canvas creative direction is additive: it cannot replace verified product facts, curated reference boundaries, physical constraints, or compliance policy in the task prompt.
+
 - `pending`: temporary local candidate, visible through its database ID.
 - `selected/promoted`: atomically moved into `workspace/组合/<product>/<task>/<中文图型>/`.
 - deleted: candidate file and candidate row are removed; the minimal run audit event remains.
@@ -191,6 +195,7 @@ This boundary lets the website visualize the production process while only retai
 | --- | --- | --- |
 | `GET` | `/api/health` | Service and live-generation readiness |
 | `GET` | `/api/workspace` | Scan products, tasks, prompts, and outputs |
+| `POST` | `/api/workspace/assets/import` | Persist a canvas import under the selected product and return a stable URL |
 | `GET/PUT` | `/api/canvases/{id}` | Load or save a canvas document |
 | `POST` | `/api/generation-runs` | Create an asynchronous local batch run |
 | `GET` | `/api/generation-runs` | List real generation runs |
@@ -219,7 +224,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest \
   -q -p no:cacheprovider
 ```
 
-The current suite covers API persistence, path security, database migration, asynchronous runs, structured events, staging, promotion, deletion, and multi-candidate output behavior.
+The current suite covers API persistence, path security, stable canvas imports, run creative snapshots, database migration, asynchronous runs, structured events, staging, promotion, deletion, and multi-candidate output behavior.
 
 ## Security model
 

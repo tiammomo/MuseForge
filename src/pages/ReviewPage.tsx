@@ -59,6 +59,7 @@ export function ReviewPage() {
   const demoMode = useAppStore((state) => state.demoMode)
   const notify = useAppStore((state) => state.notify)
   const queueCanvasInsert = useAppStore((state) => state.queueCanvasInsert)
+  const refreshWorkspace = useAppStore((state) => state.refreshWorkspace)
   const [candidates, setCandidates] = useState<GenerationCandidate[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [activeId, setActiveId] = useState<string>()
@@ -141,6 +142,7 @@ export function ReviewPage() {
     setWorking(true)
     try {
       await deleteCandidate(candidate.id)
+      await refreshWorkspace()
       setCandidates((items) => items.filter((item) => item.id !== candidate.id))
       setSelected((items) => { const next = new Set(items); next.delete(candidate.id); return next })
       notify({ title: '候选已清理', detail: `${candidate.name ?? `候选 ${candidate.variant}`} 的暂存文件与记录已删除。`, tone: 'success' })
@@ -166,6 +168,7 @@ export function ReviewPage() {
     const kept = results.filter((result) => result.status === 'fulfilled').map((result) => (result as PromiseFulfilledResult<GenerationCandidate>).value)
     const keptById = new Map(kept.map((candidate) => [candidate.id, candidate]))
     setCandidates((items) => items.map((candidate) => keptById.get(candidate.id) ?? candidate))
+    if (kept.length) await refreshWorkspace()
     setWorking(false)
     const failed = results.length - kept.length
     notify({
@@ -192,6 +195,7 @@ export function ReviewPage() {
     const deletedIds = new Set(items.filter((_, index) => results[index].status === 'fulfilled').map((candidate) => candidate.id))
     setCandidates((current) => current.filter((candidate) => !deletedIds.has(candidate.id)))
     setSelected((current) => new Set([...current].filter((id) => !deletedIds.has(id))))
+    if (deletedIds.size) await refreshWorkspace()
     setWorking(false)
     const failed = results.length - deletedIds.size
     notify({ title: failed ? '部分候选清理失败' : '未选候选已清理', detail: `已删除 ${deletedIds.size} 张${failed ? `，${failed} 张仍保留` : ''}。`, tone: failed ? 'warning' : 'success' })
@@ -227,7 +231,7 @@ export function ReviewPage() {
       },
       mode,
     })
-    navigate('/studio')
+    navigate(`/studio?product=${encodeURIComponent(canvasCandidate.product)}&task=${encodeURIComponent(canvasCandidate.task)}&shot=${encodeURIComponent(canvasCandidate.shot)}`)
   }
 
   return (

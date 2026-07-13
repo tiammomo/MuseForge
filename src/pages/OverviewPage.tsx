@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   Check,
@@ -15,7 +16,9 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { demoWorkspace } from '../lib/demo'
+import { listGenerationRuns } from '../lib/api'
 import { useAppStore } from '../store/appStore'
+import type { GenerationRun } from '../types'
 
 const statusMeta = {
   ready: { label: '可生成', icon: Check },
@@ -26,6 +29,9 @@ const statusMeta = {
 
 export function OverviewPage() {
   const workspace = useAppStore((state) => state.workspace) ?? demoWorkspace
+  const apiOnline = useAppStore((state) => state.apiOnline)
+  const demoMode = useAppStore((state) => state.demoMode)
+  const [runs, setRuns] = useState<GenerationRun[]>([])
   const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date()).replace('星期', '，星期')
   const promptCoverage = Math.min(100, Math.round((workspace.stats.prompts / Math.max(workspace.stats.tasks * 5, 1)) * 100))
   const productOutputMax = Math.max(1, ...workspace.products.map((product) => product.outputCount))
@@ -35,6 +41,23 @@ export function OverviewPage() {
     count: product.outputCount,
     height: product.outputCount ? Math.max(14, Math.round((product.outputCount / productOutputMax) * 100)) : 0,
   }))
+  const currentRun = runs.find((run) => run.status === 'running')
+    ?? runs.find((run) => run.status === 'queued')
+    ?? runs[0]
+  const runThumbnail = currentRun?.thumbnail
+    ?? workspace.products.find((product) => product.id === currentRun?.product)?.thumbnail
+
+  useEffect(() => {
+    if (!apiOnline || demoMode) {
+      setRuns([])
+      return
+    }
+    let cancelled = false
+    const loadRuns = () => { void listGenerationRuns().then((items) => { if (!cancelled) setRuns(items) }).catch(() => { if (!cancelled) setRuns([]) }) }
+    loadRuns()
+    const timer = window.setInterval(loadRuns, 2500)
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [apiOnline, demoMode, workspace.stats.pendingReview])
 
   return (
     <div className="overview-page">
@@ -45,7 +68,7 @@ export function OverviewPage() {
           <span>{workspace.stats.pendingReview} 张图片等待审核，{workspace.stats.tasks} 个生产任务已进入工作区。</span>
         </div>
         <div className="welcome-actions">
-          <button className="button secondary"><FolderPlus size={17} />导入已有目录</button>
+          <Link className="button secondary" to="/settings"><FolderPlus size={17} />查看目录协议</Link>
           <Link className="button primary" to="/studio"><Plus size={17} />新建创作</Link>
         </div>
       </section>
@@ -86,7 +109,7 @@ export function OverviewPage() {
         <div className="panel recent-projects">
           <div className="panel-heading">
             <div><small>继续工作</small><h3>最近项目</h3></div>
-            <button className="text-button">查看全部 <ChevronRight size={15} /></button>
+            <Link className="text-button" to="/matrix">查看全部 <ChevronRight size={15} /></Link>
           </div>
           <div className="project-list">
             {workspace.products.slice(0, 3).map((project, index) => {
@@ -114,27 +137,26 @@ export function OverviewPage() {
         <div className="panel production-pulse">
           <div className="panel-heading">
             <div><small>生产脉搏</small><h3>当前流水线</h3></div>
-            <span className="live-label"><i /> LIVE</span>
+            <span className={`live-label ${currentRun?.status === 'running' ? '' : 'idle'}`}><i />{currentRun?.status === 'running' ? '运行中' : currentRun ? '最近运行' : '暂无运行'}</span>
           </div>
-          <div className="pulse-feature">
-            <img src="/demo/product-studio.png" alt="当前生成中的商品图" />
-            <div className="pulse-gradient" />
-            <div className="pulse-copy">
-              <span>正在生成 · 68%</span>
-              <strong>自然晨光场景</strong>
-              <small>MF-DEMO-001 · 候选 2 / 4</small>
-              <div className="pulse-progress"><i /></div>
+          {currentRun ? <>
+            <div className={`pulse-feature ${runThumbnail ? '' : 'no-image'}`}>
+              {runThumbnail && <img src={runThumbnail} alt="当前运行商品" />}
+              <div className="pulse-gradient" />
+              <div className="pulse-copy">
+                <span>{currentRun.status === 'running' ? '正在生成' : currentRun.status === 'queued' ? '等待执行' : currentRun.status === 'failed' ? '运行失败' : '生成结束'} · {currentRun.progress}%</span>
+                <strong>{currentRun.product}</strong>
+                <small>{currentRun.tasks.length} 个任务 · {currentRun.candidateCount} / {currentRun.expectedCount} 张候选</small>
+                <div className="pulse-progress"><i style={{ width: `${currentRun.progress}%` }} /></div>
+              </div>
             </div>
-          </div>
-          <div className="pipeline-steps">
-            <div className="done"><span><Check size={13} /></span><p><strong>事实校验</strong><small>10:21 完成</small></p></div>
-            <i />
-            <div className="done"><span><Check size={13} /></span><p><strong>Prompt 策划</strong><small>10:24 完成</small></p></div>
-            <i />
-            <div className="active"><span>3</span><p><strong>候选生成</strong><small>2 张处理中</small></p></div>
-            <i />
-            <div><span>4</span><p><strong>人工审核</strong><small>等待开始</small></p></div>
-          </div>
+            <div className="pipeline-steps">
+              <div className="done"><span><Check size={13} /></span><p><strong>任务门槛</strong><small>已通过</small></p></div><i />
+              <div className="done"><span><Check size={13} /></span><p><strong>运行快照</strong><small>已固化</small></p></div><i />
+              <div className={currentRun.status === 'running' || currentRun.status === 'queued' ? 'active' : currentRun.status === 'failed' ? '' : 'done'}><span>{currentRun.status === 'completed' ? <Check size={13} /> : '3'}</span><p><strong>候选生成</strong><small>{currentRun.completedCount} 完成 · {currentRun.failedCount} 失败</small></p></div><i />
+              <div className={currentRun.pendingReviewCount ? 'active' : ''}><span>4</span><p><strong>人工审核</strong><small>{currentRun.pendingReviewCount} 张待处理</small></p></div>
+            </div>
+          </> : <div className="pulse-empty"><Clock3 size={26} /><strong>还没有真实生成记录</strong><p>从任务矩阵或画布提交后，这里会展示服务端记录的实时进度。</p></div>}
           <Link to="/queue" className="full-link">打开生成队列 <ArrowRight size={15} /></Link>
         </div>
       </section>
@@ -143,7 +165,7 @@ export function OverviewPage() {
         <div><small>快速开始</small><h3>选择一条生产路径</h3></div>
         <Link to="/matrix" className="quick-card"><span className="quick-icon product"><Images size={20} /></span><p><strong>商品图工作流</strong><small>五类镜头、配件组合、规则校验</small></p><ChevronRight size={18} /></Link>
         <Link to="/studio" className="quick-card"><span className="quick-icon canvas"><Sparkles size={20} /></span><p><strong>自由画布</strong><small>参考图、构图、变体自由编排</small></p><ChevronRight size={18} /></Link>
-        <button className="quick-card"><span className="quick-icon import"><FolderPlus size={20} /></span><p><strong>导入既有任务</strong><small>扫描现有目录并继续生产</small></p><ChevronRight size={18} /></button>
+        <Link to="/assets" className="quick-card"><span className="quick-icon import"><FolderPlus size={20} /></span><p><strong>检查现有目录</strong><small>查看已扫描的源素材与任务参考</small></p><ChevronRight size={18} /></Link>
       </section>
     </div>
   )

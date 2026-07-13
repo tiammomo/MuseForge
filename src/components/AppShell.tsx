@@ -39,6 +39,10 @@ const titles: Record<string, { eyebrow: string; title: string }> = {
 }
 
 function Sidebar() {
+  const workspace = useAppStore((state) => state.workspace)
+  const prepared = workspace?.stats.tasks ?? 0
+  const outputs = workspace?.stats.outputs ?? 0
+  const coverage = prepared ? Math.min(100, Math.round(((workspace?.stats.prompts ?? 0) / (prepared * 5)) * 100)) : 0
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -49,7 +53,7 @@ function Sidebar() {
         </div>
       </div>
 
-      <button className="workspace-switcher">
+      <button className="workspace-switcher" disabled title="多工作区切换规划中">
         <span className="workspace-icon"><Box size={16} /></span>
         <span><small>当前工作区</small><strong>商品图实验室</strong></span>
         <ChevronDown size={15} />
@@ -72,11 +76,11 @@ function Sidebar() {
 
       <div className="sidebar-bottom">
         <div className="storage-card">
-          <div className="storage-heading"><span>本地存储</span><strong>27.4 GB</strong></div>
-          <div className="storage-track"><span /></div>
-          <small>已用 27.4 GB / 120 GB</small>
+          <div className="storage-heading"><span>工作区准备度</span><strong>{coverage}%</strong></div>
+          <div className="storage-track"><span style={{ width: `${coverage}%` }} /></div>
+          <small>{prepared} 个任务 · {outputs} 张正式输出</small>
         </div>
-        <button className="profile-button">
+        <button className="profile-button" disabled title="团队与权限规划中">
           <span className="avatar">MF</span>
           <span><strong>创意工作组</strong><small>本地管理员</small></span>
           <SlidersHorizontal size={15} />
@@ -108,10 +112,10 @@ function Topbar() {
         <h1>{meta.title}</h1>
       </div>
       <div className="topbar-actions">
-        <button className="search-button"><Search size={16} /><span>搜索项目、SKU 或任务</span><kbd>⌘ K</kbd></button>
+        <button className="search-button" disabled title="全局搜索规划中"><Search size={16} /><span>搜索项目、SKU 或任务</span><kbd>⌘ K</kbd></button>
         <span className={`connection-pill ${apiOnline ? 'online' : ''}`}><i />{demoMode ? '演示数据' : apiOnline ? '本地服务正常' : '离线'}</span>
-        <button className="icon-button" aria-label="命令"><Command size={18} /></button>
-        <button className="icon-button" aria-label="帮助"><CircleHelp size={18} /></button>
+        <button className="icon-button" aria-label="命令（规划中）" disabled><Command size={18} /></button>
+        <button className="icon-button" aria-label="帮助（规划中）" disabled><CircleHelp size={18} /></button>
       </div>
     </header>
   )

@@ -75,6 +75,8 @@ Each document contains:
 - task and shot metadata;
 - viewport position, zoom, and fit/custom mode.
 
+The product, task, and shot identity is also encoded in the Studio query string. Zustand keeps fast in-session navigation state, while the URL is the recoverable and shareable context source after workspace validation.
+
 The browser uses:
 
 1. SQLite through `GET/PUT /api/canvases/{id}` as the online authority;
@@ -140,8 +142,11 @@ The executor launches only the configured `product_image_workflow.py` entrypoint
 
 - `MUSEFORGE_RUN_ID`
 - `MUSEFORGE_RUN_DIR`
+- `MUSEFORGE_RUN_SPEC_PATH`
 - `MUSEFORGE_VARIANTS`
 - `PYTHONUNBUFFERED=1`
+
+Before launch, the backend writes `workspace/.museforge/runs/<run-id>/run-spec.json`. It contains the validated scope, execution limits, and optional canvas creative brief. The Skill appends those instructions to the selected task prompt while preserving product truth, references, physical rules, and compliance text.
 
 The Skill emits line-delimited events prefixed with `MUSEFORGE_EVENT `. The adapter validates every event against the persisted request scope before updating a planned item.
 
@@ -221,13 +226,14 @@ The lower-level `image2_combo_batch.py` is used by the reviewed Skill flow; it i
 - staging files are private to the candidate endpoint;
 - promotion rejects destination collisions instead of overwriting an existing file;
 - image writes use temporary `.part` files followed by atomic replacement.
+- browser image imports are decoded by the API, size/type checked, and persisted below `原始商品图/<product>/画布导入/`; canvas documents store only the returned workspace URL.
 
 ## 8. API surface
 
 | Area | Endpoints |
 | --- | --- |
 | Service | `GET /api/health` |
-| Workspace | `GET /api/workspace`, `GET /api/workspace/assets/{path}` |
+| Workspace | `GET /api/workspace`, `POST /api/workspace/assets/import`, `GET /api/workspace/assets/{path}` |
 | Canvas | `GET /api/canvases/{id}`, `PUT /api/canvases/{id}` |
 | Legacy jobs/demo | `GET /api/jobs`, `POST /api/jobs/demo` |
 | Runs | `POST /api/generation-runs`, `GET /api/generation-runs`, `GET /api/generation-runs/{id}` |
@@ -240,7 +246,8 @@ OpenAPI schemas are available from `/docs` while the API is running.
 
 Backend and Skill tests cover:
 
-- health, workspace, assets, canvas round trips, and persistence;
+- health, workspace, stable asset imports, canvas round trips, and persistence;
+- canvas creative-brief request normalization and immutable run-spec persistence;
 - workspace traversal and hidden-path protection;
 - old database migration;
 - non-blocking run creation;
