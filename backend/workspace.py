@@ -55,6 +55,11 @@ def _asset(path: Path, workspace_root: Path) -> dict[str, Any]:
     }
 
 
+def workspace_asset_summary(path: Path, workspace_root: Path) -> dict[str, Any]:
+    """Return the stable API representation for a validated workspace image."""
+    return _asset(path, workspace_root)
+
+
 def _folder_summary(folder: Path, workspace_root: Path) -> dict[str, Any]:
     files = _safe_files(folder)
     images = [path for path in files if _is_file_with_suffix(path, IMAGE_SUFFIXES)]
@@ -129,6 +134,7 @@ def _task_summary(
         "has_prompts": prompt_path.is_file(),
         "prompt_count": _prompt_count(prompt_path),
         "reference_count": len(references),
+        "references": [_asset(path, workspace_root) for path in references[:5]],
         "has_reference_manifest": (task_dir / "reference_manifest.json").is_file(),
         "generated_image_count": generated_count,
         "shots": shot_summaries,

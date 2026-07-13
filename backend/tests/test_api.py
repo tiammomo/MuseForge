@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 from dataclasses import replace
@@ -100,6 +101,34 @@ def test_health_workspace_and_asset_summary(settings: Settings) -> None:
         asset = client.get(asset_url)
         assert asset.status_code == 200
         assert asset.content == b"not-a-real-png"
+
+
+def test_canvas_asset_import_uses_a_stable_workspace_url(settings: Settings) -> None:
+    content = b"imported-image-bytes"
+    data_url = "data:image/png;base64," + base64.b64encode(content).decode("ascii")
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/workspace/assets/import",
+            json={
+                "product": "SKU-1",
+                "filename": "new-reference.png",
+                "dataUrl": data_url,
+            },
+        )
+        assert response.status_code == 201
+        imported = response.json()
+        assert imported["relative_path"].startswith("原始商品图/SKU-1/画布导入/")
+        assert imported["original_name"] == "new-reference.png"
+        assert client.get(imported["url"]).content == content
+
+        workspace = client.get("/api/workspace").json()
+        assert workspace["products"][0]["image_count"] == 2
+
+        invalid = client.post(
+            "/api/workspace/assets/import",
+            json={"product": "SKU-1", "filename": "bad.svg", "dataUrl": data_url},
+        )
+        assert invalid.status_code == 422
 
 
 def test_canvas_round_trip_and_sqlite_persistence(settings: Settings) -> None:

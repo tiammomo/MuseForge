@@ -67,12 +67,33 @@ def test_collect_jobs_expands_staged_candidates_without_overwrite(tmp_path: Path
     ref = tmp_path / "reference.png"
     ref.write_bytes(b"reference")
     run_dir = (tmp_path / "runs" / "run-1").resolve()
+    run_dir.mkdir(parents=True)
+    run_spec_path = run_dir / "run-spec.json"
+    run_spec_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "run_id": "run-1",
+                "product": "SKU-1",
+                "tasks": ["单品"],
+                "shots": ["main"],
+                "creative_brief": {
+                    "environment": "Bright neutral tabletop.",
+                    "composition": "Centered layout.",
+                    "negatives": "No clutter.",
+                    "visible_text": "READY TO SHIP",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(workflow, "OUTPUT_ROOT", output_root)
     monkeypatch.setattr(workflow, "validate_prompt_set", lambda prompts, combo: None)
     monkeypatch.setattr(workflow, "curated_reference_images", lambda *args, **kwargs: [ref])
     monkeypatch.setenv("MUSEFORGE_RUN_ID", "run-1")
     monkeypatch.setenv("MUSEFORGE_RUN_DIR", str(run_dir))
+    monkeypatch.setenv("MUSEFORGE_RUN_SPEC_PATH", str(run_spec_path))
     monkeypatch.setenv("MUSEFORGE_VARIANTS", "3")
     monkeypatch.setenv("IMAGE_OUTPUT_FORMAT", "png")
 
@@ -84,6 +105,9 @@ def test_collect_jobs_expands_staged_candidates_without_overwrite(tmp_path: Path
         for index in range(1, 4)
     ]
     assert all(not job.allow_overwrite for job in jobs)
+    assert jobs[0].prompt["museforge_canvas_direction"]["composition"] == "Centered layout."
+    assert "Bright neutral tabletop." in jobs[0].prompt["environment"]
+    assert "READY TO SHIP" in jobs[0].prompt["text"]["Content"]
 
     jobs[0].target.parent.mkdir(parents=True)
     jobs[0].target.write_bytes(b"already-finished")

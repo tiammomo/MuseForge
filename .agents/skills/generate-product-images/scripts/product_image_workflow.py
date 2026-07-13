@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -767,6 +768,75 @@ def museforge_run_config() -> MuseForgeRunConfig:
     )
 
 
+def museforge_run_spec(run: MuseForgeRunConfig) -> dict[str, Any]:
+    """Load the immutable backend-authored canvas direction for this run."""
+    raw_path = os.getenv("MUSEFORGE_RUN_SPEC_PATH", "").strip()
+    if not raw_path:
+        return {}
+    if run.run_dir is None:
+        raise ValueError("MUSEFORGE_RUN_SPEC_PATH is only valid for staged runs")
+    path = Path(raw_path)
+    if not path.is_absolute():
+        raise ValueError("MUSEFORGE_RUN_SPEC_PATH must be an absolute path")
+    path = path.resolve()
+    try:
+        path.relative_to(run.run_dir.resolve())
+    except ValueError as exc:
+        raise ValueError("MUSEFORGE_RUN_SPEC_PATH escaped MUSEFORGE_RUN_DIR") from exc
+    if path != (run.run_dir / "run-spec.json").resolve() or not path.is_file():
+        raise ValueError("MuseForge run spec is unavailable")
+    if path.stat().st_size > 64 * 1024:
+        raise ValueError("MuseForge run spec is unexpectedly large")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("version") != 1:
+        raise ValueError("MuseForge run spec has an unsupported format")
+    if run.run_id and value.get("run_id") != run.run_id:
+        raise ValueError("MuseForge run spec does not match the active run")
+    return value
+
+
+def apply_canvas_creative_brief(
+    prompt: dict[str, Any],
+    brief: dict[str, Any],
+) -> dict[str, Any]:
+    """Add canvas direction without replacing verified facts or safety policies."""
+    clean = {
+        key: str(brief.get(key) or "").strip()
+        for key in ("subject", "environment", "composition", "negatives", "visible_text")
+    }
+    if not any(clean.values()):
+        return prompt
+    result = copy.deepcopy(prompt)
+    result["museforge_canvas_direction"] = {
+        "policy": "Additional art direction only. Verified product facts, reference boundaries, physical constraints, and compliance rules remain authoritative.",
+        **clean,
+    }
+    if clean["environment"]:
+        result["environment"] = (
+            f"{result.get('environment', '')} Additional canvas environment direction: "
+            f"{clean['environment']}"
+        ).strip()
+    if clean["composition"]:
+        result["composition"] = (
+            f"{result.get('composition', '')} Additional canvas composition direction: "
+            f"{clean['composition']}"
+        ).strip()
+    if clean["negatives"]:
+        result["negatives"] = (
+            f"{result.get('negatives', '')} Additional exclusions from the canvas: "
+            f"{clean['negatives']}"
+        ).strip()
+    if clean["visible_text"]:
+        text_policy = result.get("text") if isinstance(result.get("text"), dict) else {}
+        text_policy = dict(text_policy)
+        text_policy["Content"] = (
+            f"{text_policy.get('Content', '')} Canvas-visible copy request: "
+            f"{clean['visible_text']}"
+        ).strip()
+        result["text"] = text_policy
+    return result
+
+
 def output_path(job_dir: Path, prompt: dict[str, Any]) -> Path:
     filename = str(prompt["filename"])
     shot = next((key for key in SHOT_FOLDERS if filename.endswith(key)), "main")
@@ -889,9 +959,15 @@ def collect_jobs(
 ) -> list[GenerationJob]:
     jobs: list[GenerationJob] = []
     run = museforge_run_config()
+    run_spec = museforge_run_spec(run)
+    creative_brief = run_spec.get("creative_brief", {})
+    if not isinstance(creative_brief, dict):
+        raise ValueError("MuseForge creative brief must be an object")
     requested = set(selected_tasks or [])
     requested_shots = set(selected_shots or [])
     for product_dir in product_dirs:
+        if run_spec and product_dir.name != run_spec.get("product"):
+            raise ValueError("MuseForge run spec product does not match the requested product")
         product_out = OUTPUT_ROOT / product_dir.name
         available = {path.name for path in product_out.iterdir() if path.is_dir() and (path / "prompts.json").exists()}
         missing = requested - available
@@ -911,6 +987,12 @@ def collect_jobs(
                 shot = next((key for key in SHOT_FOLDERS if str(prompt["filename"]).endswith(key)), "main")
                 if requested_shots and shot not in requested_shots:
                     continue
+                if run_spec:
+                    if job_dir.name not in run_spec.get("tasks", []):
+                        raise ValueError("MuseForge run spec task does not match the requested task")
+                    if shot not in run_spec.get("shots", []):
+                        raise ValueError("MuseForge run spec shot does not match the requested shot")
+                    prompt = apply_canvas_creative_brief(prompt, creative_brief)
                 if run.run_dir is not None:
                     candidate_targets = [
                         (

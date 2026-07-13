@@ -405,8 +405,31 @@ class WorkflowRunner:
         except ValueError as exc:  # pragma: no cover - job ids are server generated
             raise RuntimeError("Generation run directory escaped its root") from exc
         run_dir.mkdir(parents=True, exist_ok=True)
+        run_spec_path = run_dir / "run-spec.json"
+        run_spec = {
+            "version": 1,
+            "run_id": job_id,
+            "product": request.get("product"),
+            "tasks": list(request.get("tasks") or []),
+            "shots": list(request.get("shots") or []),
+            "variants": int(request.get("variants") or 1),
+            "concurrency": int(request.get("concurrency") or 1),
+            "creative_brief": dict(request.get("creative_brief") or {}),
+        }
+        run_spec_path.write_text(
+            json.dumps(run_spec, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         repository.mark_job_running(job_id)
-        repository.add_event(job_id, "run.started", {"run_id": job_id})
+        repository.add_event(
+            job_id,
+            "run.started",
+            {
+                "run_id": job_id,
+                "spec": run_spec_path.relative_to(workspace_root).as_posix(),
+                "creative_brief_applied": any(run_spec["creative_brief"].values()),
+            },
+        )
 
         env = os.environ.copy()
         env.update(
@@ -415,6 +438,7 @@ class WorkflowRunner:
                 "MUSEFORGE_WORKSPACE_ROOT": str(workspace_root),
                 "MUSEFORGE_RUN_ID": job_id,
                 "MUSEFORGE_RUN_DIR": str(run_dir),
+                "MUSEFORGE_RUN_SPEC_PATH": str(run_spec_path),
                 "MUSEFORGE_VARIANTS": str(int(request.get("variants") or 1)),
             }
         )

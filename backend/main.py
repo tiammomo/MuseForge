@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path as FileSystemPath
@@ -21,10 +24,17 @@ from .workflow import (
     WorkflowValidationError,
     validate_folder_name,
 )
-from .workspace import IMAGE_SUFFIXES, SHOT_FOLDERS, resolve_workspace_asset, scan_workspace
+from .workspace import (
+    IMAGE_SUFFIXES,
+    SHOT_FOLDERS,
+    resolve_workspace_asset,
+    scan_workspace,
+    workspace_asset_summary,
+)
 
 
 CANVAS_DOCUMENT_MAX_BYTES = 2 * 1024 * 1024
+WORKSPACE_IMPORT_MAX_BYTES = 12 * 1024 * 1024
 JOB_STATUSES = {"queued", "running", "completed", "failed"}
 REVIEW_STATUSES = {"pending", "selected"}
 
@@ -88,6 +98,27 @@ class WorkflowRequest(BaseModel):
             raise ValueError(str(exc)) from exc
 
 
+class GenerationCreativeBrief(BaseModel):
+    """Canvas-authored additions layered on top of the verified task prompt."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject: str = Field(default="", max_length=2000)
+    environment: str = Field(default="", max_length=4000)
+    composition: str = Field(default="", max_length=4000)
+    negatives: str = Field(default="", max_length=4000)
+    visible_text: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_visible_text(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "visibleText" in value and "visible_text" not in value:
+            normalized = dict(value)
+            normalized["visible_text"] = normalized.pop("visibleText")
+            return normalized
+        return value
+
+
 class GenerationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +127,16 @@ class GenerationRunRequest(BaseModel):
     shots: list[str] = Field(min_length=1, max_length=5)
     variants: int = Field(default=4, ge=1, le=6)
     concurrency: int = Field(default=4, ge=1, le=10)
+    creative_brief: GenerationCreativeBrief | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_creative_brief(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "creativeBrief" in value and "creative_brief" not in value:
+            normalized = dict(value)
+            normalized["creative_brief"] = normalized.pop("creativeBrief")
+            return normalized
+        return value
 
     @field_validator("product")
     @classmethod
@@ -131,6 +172,42 @@ class CandidateDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: Literal["selected"]
+
+
+class WorkspaceAssetImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product: str = Field(min_length=1, max_length=120)
+    filename: str = Field(min_length=1, max_length=180)
+    data_url: str = Field(min_length=1, max_length=17 * 1024 * 1024)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_data_url(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "dataUrl" in value and "data_url" not in value:
+            normalized = dict(value)
+            normalized["data_url"] = normalized.pop("dataUrl")
+            return normalized
+        return value
+
+    @field_validator("product")
+    @classmethod
+    def validate_product(cls, value: str) -> str:
+        try:
+            return validate_folder_name(value, field="product")
+        except WorkflowValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value: str) -> str:
+        if value != value.strip() or FileSystemPath(value).name != value:
+            raise ValueError("filename must be one ordinary file name")
+        if any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("filename contains control characters")
+        if FileSystemPath(value).suffix.casefold() not in IMAGE_SUFFIXES:
+            raise ValueError("filename must use a supported image extension")
+        return value
 
 
 def _cors_origins() -> list[str]:
@@ -313,6 +390,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summary["live_generation_enabled"] = current.live_generation_enabled
         summary["liveGenerationEnabled"] = current.live_generation_enabled
         return summary
+
+    @application.post("/api/workspace/assets/import", status_code=201)
+    def import_workspace_asset(
+        payload: WorkspaceAssetImport,
+        request: Request,
+    ) -> dict[str, Any]:
+        current: Settings = request.app.state.settings
+        product_root = (current.workspace_root / "原始商品图" / payload.product).resolve()
+        source_root = (current.workspace_root / "原始商品图").resolve()
+        try:
+            product_root.relative_to(source_root)
+        except ValueError as exc:  # pragma: no cover - product validation guards this
+            raise HTTPException(status_code=403, detail="Import target escaped source assets") from exc
+        if not product_root.is_dir():
+            raise HTTPException(status_code=404, detail="Product workspace not found")
+
+        header, separator, encoded = payload.data_url.partition(",")
+        if separator != "," or not header.startswith("data:image/") or ";base64" not in header:
+            raise HTTPException(status_code=422, detail="Asset must be a base64 image data URL")
+        mime_type = header[5:].split(";", 1)[0].casefold()
+        if mime_type not in {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "image/avif",
+        }:
+            raise HTTPException(status_code=422, detail="Asset image type is not supported")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise HTTPException(status_code=422, detail="Asset image data is invalid") from exc
+        if not content:
+            raise HTTPException(status_code=422, detail="Asset image is empty")
+        if len(content) > WORKSPACE_IMPORT_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Asset image exceeds 12 MiB")
+
+        import_dir = product_root / "画布导入"
+        import_dir.mkdir(parents=True, exist_ok=True)
+        destination = import_dir / f"{uuid.uuid4().hex[:12]}-{payload.filename}"
+        temporary = destination.with_suffix(destination.suffix + ".part")
+        try:
+            temporary.write_bytes(content)
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        result = workspace_asset_summary(destination, current.workspace_root)
+        result["original_name"] = payload.filename
+        return result
 
     @application.get("/api/workspace/assets/{asset_path:path}")
     def workspace_asset(request: Request, asset_path: str) -> FileResponse:

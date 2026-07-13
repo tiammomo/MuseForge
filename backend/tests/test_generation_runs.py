@@ -180,6 +180,13 @@ def test_background_run_candidate_review_and_delete_round_trip(tmp_path: Path) -
                 "shots": ["main"],
                 "variants": 2,
                 "concurrency": 2,
+                "creativeBrief": {
+                    "subject": "Keep the verified product complete.",
+                    "environment": "Bright neutral tabletop.",
+                    "composition": "Centered with generous safe margins.",
+                    "negatives": "No unrelated props.",
+                    "visibleText": "READY TO SHIP",
+                },
             },
         )
         elapsed = time.monotonic() - started
@@ -202,6 +209,19 @@ def test_background_run_candidate_review_and_delete_round_trip(tmp_path: Path) -
         ).json()
         assert listing["total"] == 1
         assert listing["items"][0]["request"]["variants"] == 2
+        assert listing["items"][0]["request"]["creative_brief"]["visible_text"] == "READY TO SHIP"
+        run_spec = json.loads(
+            (root / ".museforge" / "runs" / queued["id"] / "run-spec.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert run_spec["run_id"] == queued["id"]
+        assert run_spec["creative_brief"]["environment"] == "Bright neutral tabletop."
+        assert any(
+            event["type"] == "run.started"
+            and event["payload"]["creative_brief_applied"] is True
+            for event in run["events"]
+        )
 
         candidates = client.get(
             "/api/candidates",
