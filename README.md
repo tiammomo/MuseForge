@@ -240,6 +240,7 @@ The current suite covers API persistence, path security, stable canvas imports, 
 
 - [Product specification](docs/product-spec.md)
 - [Canvas product and engineering roadmap](docs/canvas-roadmap.md)
+- [Visual system and interaction direction](docs/design-system.md)
 - [Technical architecture and security boundaries](docs/architecture.md)
 - [Local Skill batch-generation lifecycle](docs/local-batch-generation.md)
 - [Development and operations guide](docs/development.md)

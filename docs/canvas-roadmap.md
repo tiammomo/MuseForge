@@ -20,9 +20,11 @@ MuseForge's canvas is the refinement and delivery stage of an e-commerce image-p
 - stable local image import through the workspace API (canvas documents retain URLs, not base64 payloads);
 - retained-results shelf backed by promoted candidates;
 - one undo snapshot per grouped operation;
-- backward-compatible persistence for existing canvas documents.
+- backward-compatible persistence for existing canvas documents;
 - shareable, validated product/task/shot URL context;
-- canvas creative briefs persisted into real generation-run snapshots.
+- canvas creative briefs persisted into real generation-run snapshots;
+- independently collapsible asset and generation panels for focused artboard work;
+- truthful blank-canvas onboarding that never enters the saved document.
 
 ## Milestone 2 — Precision editing
 

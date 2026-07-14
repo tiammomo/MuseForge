@@ -167,3 +167,135 @@
   .candidate-review-grid { gap: 9px; padding: 11px; }
   .generation-run-head, .generation-run-row { grid-template-columns: minmax(210px, 1.05fr) minmax(200px, 1fr) 125px minmax(170px, .8fr) 115px; min-width: 940px; }
 }
+
+/* 2026 visual refinement: production pages should feel calm, legible, and decisive. */
+.batch-matrix-page .matrix-summary,
+.batch-queue-overview {
+  min-height: 110px;
+  padding: 22px 24px;
+  border-radius: 18px;
+}
+
+.batch-matrix-summary .summary-copy select { font-size: 21px; letter-spacing: -.3px; }
+.generation-gate { margin-top: 16px; padding: 15px 17px; border-radius: 13px; }
+.generation-gate strong { font-size: 15px; }
+.generation-gate p, .generation-gate > button { font-size: 13px; }
+
+.batch-matrix-toolbar,
+.batch-queue-toolbar { min-height: 58px; padding-inline: 16px; }
+
+.batch-matrix-table,
+.generation-run-list { border-radius: 16px; }
+
+.batch-matrix-table .matrix-head,
+.batch-matrix-table .matrix-row { min-height: 70px; }
+
+.batch-matrix-table .matrix-head > button,
+.batch-matrix-table .task-col strong,
+.batch-matrix-table .matrix-cell > strong { font-size: 13px; }
+
+.batch-matrix-table .task-col small,
+.batch-matrix-table .matrix-cell > small,
+.batch-selection-copy small,
+.batch-selection-copy span,
+.batch-selection-bar label { font-size: 12px; }
+
+.batch-selection-bar {
+  bottom: 20px;
+  min-height: 82px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(19, 27, 22, .24);
+}
+
+.batch-selection-copy strong { font-size: 15px; }
+.batch-selection-bar select { height: 36px; border-radius: 9px; font-size: 13px; }
+
+.demo-data-banner { padding: 13px 16px; border-radius: 12px; }
+.demo-data-banner strong { font-size: 14px; }
+.demo-data-banner span, .poll-state { font-size: 12px; }
+
+.generation-run-head { min-height: 48px; font-size: 12px; }
+.generation-run-row { min-height: 116px; }
+.generation-run-head span, .generation-run-row > div { padding-inline: 17px; }
+.run-identity img, .run-placeholder { flex-basis: 58px; width: 58px; height: 58px; border-radius: 12px; }
+.run-identity strong { font-size: 15px; }
+.run-scope strong { font-size: 14px; }
+.run-identity small, .run-scope small, .run-message,
+.run-progress-cell > div, .run-progress-cell > small,
+.run-next-action span, .run-identity em { font-size: 12px; }
+.run-next-action button { min-height: 38px; padding-inline: 12px; border-radius: 9px; font-size: 12px; }
+.run-progress { height: 6px; }
+
+.batch-review-page {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(205, 235, 127, .055), transparent 28%),
+    #222724;
+}
+
+.batch-review-sidebar,
+.batch-review-inspector { background: #fffefa; }
+.batch-review-side-head { min-height: 74px; padding-inline: 13px; }
+.batch-review-side-head button { width: 36px; height: 36px; border-radius: 9px; }
+.batch-review-side-head small,
+.review-demo-note,
+.review-run-id span,
+.review-group-list small,
+.review-group-list em { font-size: 12px; }
+.batch-review-side-head strong { font-size: 15px; }
+.review-run-id { padding: 13px 15px; }
+.review-run-id strong { font-size: 12px; }
+.review-group-list { padding: 9px; }
+.review-group-list > button { grid-template-columns: 60px minmax(0, 1fr) 17px; min-height: 78px; gap: 10px; padding: 8px; border-radius: 11px; }
+.review-group-list img { width: 60px; height: 60px; border-radius: 9px; }
+.review-group-list strong { font-size: 13px; }
+
+.batch-review-toolbar { flex-basis: 70px; padding-inline: 20px; }
+.batch-review-toolbar small,
+.batch-review-toolbar > span,
+.batch-review-toolbar button { font-size: 12px; }
+.batch-review-toolbar strong { font-size: 17px; }
+.batch-review-toolbar button { min-height: 38px; padding-inline: 12px; border-radius: 9px; }
+
+.candidate-review-grid { gap: 16px; padding: 22px; }
+.candidate-review-grid article { border-radius: 15px; box-shadow: 0 16px 40px rgba(0, 0, 0, .18); }
+.candidate-review-grid article > label { flex-basis: 50px; padding-left: 12px; }
+.candidate-review-grid article > label strong,
+.candidate-review-grid article > label em,
+.candidate-review-image > span,
+.candidate-score { font-size: 12px; }
+.candidate-trash { width: 32px; height: 32px; }
+
+.batch-review-actions { flex-basis: 82px; padding-inline: 20px; }
+.batch-review-actions small { font-size: 12px; }
+.batch-review-actions strong { font-size: 13px; }
+.batch-review-actions button { min-height: 44px; padding-inline: 15px; border-radius: 10px; font-size: 13px; }
+
+.batch-review-inspector { padding: 21px; }
+.review-inspector-title small,
+.review-active-preview > span,
+.review-detail-grid span,
+.review-detail-grid strong,
+.review-storage-explain p,
+.review-canvas-actions p,
+.review-canvas-actions button,
+.review-single-delete,
+.review-inspector-empty span { font-size: 12px; }
+.review-inspector-title h3 { font-size: 19px; }
+.review-active-preview { height: 230px; margin-top: 16px; border-radius: 13px; }
+.review-detail-grid { gap: 9px; margin-top: 14px; }
+.review-detail-grid div { padding: 11px; border-radius: 9px; }
+.review-detail-grid strong { font-size: 13px; }
+.review-storage-explain h4, .review-canvas-actions h4 { font-size: 14px; }
+.review-canvas-actions button, .review-single-delete { min-height: 40px; border-radius: 9px; }
+
+@media (min-width: 1600px) {
+  .batch-review-page { grid-template-columns: 280px minmax(680px, 1fr) 380px; }
+  .review-active-preview { height: 270px; }
+}
+
+@media (max-width: 1280px) {
+  .candidate-review-grid { gap: 10px; padding: 13px; }
+  .batch-review-page { grid-template-columns: 210px minmax(420px, 1fr) 310px; }
+  .batch-review-inspector { padding: 16px; }
+}

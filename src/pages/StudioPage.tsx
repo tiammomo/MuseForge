@@ -24,6 +24,10 @@ import {
   Maximize2,
   Minus,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Redo2,
   ScanSearch,
@@ -410,6 +414,8 @@ export function StudioPage() {
   const [canvasVersion, setCanvasVersion] = useState<number>()
   const [reloadToken, setReloadToken] = useState(0)
   const [canvasFocused, setCanvasFocused] = useState(false)
+  const [assetPanelOpen, setAssetPanelOpen] = useState(true)
+  const [inspectorOpen, setInspectorOpen] = useState(true)
   const hydrating = useRef(true)
   const nodesRef = useRef(nodes)
   const promptRef = useRef(prompt)
@@ -1087,7 +1093,7 @@ export function StudioPage() {
         </div>
         <div className="studio-status"><span className={`autosave ${saveState}`}><i />{saveLabel}</span><button className="button ghost" disabled={saveState === 'loading' || saveState === 'load-error'} onClick={exportCanvas}><Download size={15} />导出 1024</button><button className="button dark" disabled={generating || saveState === 'loading' || saveState === 'load-error'} onClick={() => { void generate() }}><Zap size={15} />生成候选</button></div>
       </div>
-      <div className="studio-workspace" onPointerDownCapture={(event) => setCanvasFocused(Boolean((event.target as HTMLElement).closest('.canvas-column')))}>
+      <div className={`studio-workspace ${assetPanelOpen ? '' : 'asset-panel-collapsed'} ${inspectorOpen ? '' : 'inspector-collapsed'}`} onPointerDownCapture={(event) => setCanvasFocused(Boolean((event.target as HTMLElement).closest('.canvas-column')))}>
         {(saveState === 'loading' || saveState === 'load-error') && (
           <div className="canvas-load-blocker" role={saveState === 'load-error' ? 'alert' : 'status'}>
             <div>
@@ -1100,6 +1106,8 @@ export function StudioPage() {
         )}
         <AssetPanel onAdd={(asset) => { void addAsset(asset) }} onImport={(file) => { void importAsset(file) }} projectAssets={projectAssets} resultAssets={resultAssets} product={selectedProduct} taskLabel={selectedTask} referenceCount={selectedTaskRecord?.referenceCount ?? 0} nodes={nodes} selectedIds={selectedIds} onSelect={selectLayer} onUpdateNode={updateNode} onMoveLayer={moveLayer} />
         <section className="canvas-column">
+          <button className="panel-rail-toggle left" onClick={() => setAssetPanelOpen((value) => !value)} title={assetPanelOpen ? '收起素材面板' : '展开素材面板'} aria-label={assetPanelOpen ? '收起素材面板' : '展开素材面板'}>{assetPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button>
+          <button className="panel-rail-toggle right" onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? '收起生成面板' : '展开生成面板'} aria-label={inspectorOpen ? '收起生成面板' : '展开生成面板'}>{inspectorOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}</button>
           <div className="floating-toolbar">
             <button className={activeTool === 'select' ? 'active' : ''} onClick={() => setTool('select')} title="选择工具 (V)"><MousePointer2 size={17} /></button>
             <button className={activeTool === 'hand' ? 'active' : ''} onClick={() => setTool('hand')} title="抓手工具 (H / Space)"><Hand size={17} /></button>
@@ -1113,6 +1121,7 @@ export function StudioPage() {
             <button onClick={deleteSelected} disabled={!selectedNodes.some((node) => node.id !== 'scene-background' && !node.locked)} title="删除"><Trash2 size={17} /></button>
           </div>
           {saveState !== 'loading' && <StudioCanvas key={hydrationKey} ref={canvasRef} nodes={nodes} onNodesChange={commitNodes} selectedIds={selectedIds} onSelectionChange={setSelectedIds} tool={activeTool} viewport={viewport} onViewportChange={changeViewport} artboardLabel={`${selectedTask} · ${shotOptions.find((shot) => shot.id === selectedShot)?.label ?? ''}`} />}
+          {saveState === 'saved' && nodes.length === 0 && <div className="canvas-empty-state"><span><WandSparkles size={24} /></span><strong>从真实商品素材开始</strong><p>选择一张源图建立第一层，或先添加文字搭建设计骨架。空白画布不会自动混入示例内容。</p><div>{projectAssets[0] ? <button className="primary" onClick={() => { void addAsset(projectAssets[0]) }}><ImagePlus size={15} />放入商品图</button> : <button className="primary" onClick={() => navigate('/assets')}><ImagePlus size={15} />检查商品素材</button>}<button onClick={addText}><TextCursorInput size={15} />添加文字</button></div></div>}
           <div className="zoom-control"><button onClick={() => canvasRef.current?.zoomTo(viewport.zoom - 0.1)}><Minus size={14} /></button><input type="range" min="35" max="150" value={Math.round(viewport.zoom * 100)} onChange={(event) => canvasRef.current?.zoomTo(Number(event.target.value) / 100)} /><span>{Math.round(viewport.zoom * 100)}%</span><button onClick={() => canvasRef.current?.zoomTo(viewport.zoom + 0.1)}><Plus size={14} /></button><button onClick={() => canvasRef.current?.fitArtboard()} title="适应画板 (0)"><Maximize2 size={14} /></button></div>
           <div className="canvas-hint"><Grip size={13} />空白拖拽框选 · Shift 多选 · 自动吸附 · 方向键微移</div>
           <button className="queue-peek" onClick={() => navigate(activeRunId ? `/queue?run=${encodeURIComponent(activeRunId)}` : '/queue')}><span><i />{activeRunId ? `真实运行 ${activeRunId.slice(0, 8)} 已接入队列` : demoMode && jobs.filter((job) => job.status === 'running').length ? `${jobs.filter((job) => job.status === 'running').length} 个演示任务生成中` : '本地候选暂存已启用'}</span><strong>查看运行队列 <ChevronDown size={14} /></strong></button>
