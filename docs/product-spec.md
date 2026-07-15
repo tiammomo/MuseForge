@@ -209,6 +209,7 @@ The current local-first release is successful when a user can:
 - manifest editing and publishing through the API;
 - run cancellation and retry controls;
 - persisted event timeline and worker diagnostics in the queue UI;
+- provider health checks, explicit retry to another channel, and invoice reconciliation;
 - image crop/fit, masks, inline text editing, and reusable groups;
 - configurable rulers, grids, margins, bleed, and channel-safe areas;
 - marketplace and channel-specific artboard templates.
@@ -220,4 +221,4 @@ The current local-first release is successful when a user can:
 - temporary preview storage with TTL where cross-device review is required;
 - permanent object storage only for retained outputs;
 - authentication, organization workspaces, permissions, and audit policies;
-- remote GPU and multi-provider routing.
+- remote GPU workers and organization-level provider policy.

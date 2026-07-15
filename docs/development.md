@@ -48,15 +48,16 @@ npm run dev:ui
 | `MUSEFORGE_WORKFLOW_SCRIPT` | bundled Skill entrypoint | Reviewed workflow executable |
 | `MUSEFORGE_WORKFLOW_TIMEOUT_SECONDS` | `3600` | Run timeout, clamped to 10–21600 seconds |
 | `MUSEFORGE_CORS_ORIGINS` | local UI origins | Allowed browser origins |
-| `IMAGE_API_BASE_URL` | empty | Image provider base URL |
-| `IMAGE_API_ENDPOINT` | `/images/edits` | Provider endpoint |
-| `IMAGE_API_KEY` | empty | Provider secret |
-| `IMAGE_MODEL` | `gpt-image-2` | Requested image model |
-| `IMAGE_SIZE` | `1024x1024` | Requested output size |
-| `IMAGE_QUALITY` | `medium` | Requested quality |
+| `IMAGE_API_BASE_URL` | empty | Legacy provider fallback base URL |
+| `IMAGE_API_ENDPOINT` | `/images/edits` | Legacy fallback endpoint |
+| `IMAGE_API_KEY` | empty | Legacy fallback secret; managed-channel keys are encrypted in SQLite |
+| `IMAGE_MODEL` | `gpt-image-2` | Legacy fallback model |
+| `IMAGE_SIZE` | `1024x1024` | Legacy fallback output size |
+| `IMAGE_QUALITY` | `medium` | Legacy fallback quality |
 | `IMAGE_OUTPUT_FORMAT` | `png` | Output format |
 
 Project `.env` values are optional and never override variables already exported in the process environment.
+Managed providers are configured from the Settings UI. Back up `museforge.sqlite3` and `museforge.sqlite3.key` together.
 
 ## 4. Frontend commands
 

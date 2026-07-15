@@ -122,6 +122,9 @@ Primary records:
 | `jobs` | Workflow and generation-run request snapshots and output |
 | `generation_items` | One planned candidate per task × shot × candidate index |
 | `generation_events` | Structured run/item/review audit events |
+| `provider_channels` | Redacted connection metadata, rate cards, state, and encrypted credentials |
+| `provider_routing_settings` | Workspace Auto/fixed default and comparison currency |
+| `generation_provider_snapshots` | Immutable encrypted execution credential and price snapshot per run |
 
 Schema creation and migration are performed on repository initialization. Existing version-1 databases are upgraded without dropping canvas or job data.
 
@@ -133,7 +136,7 @@ Schema creation and migration are performed on repository initialization. Existi
 HTTP request
   → validate product/task/shot/limits
   → build reviewed command argv
-  → persist immutable run + planned items
+  → resolve provider and persist immutable run + planned items + encrypted provider snapshot
   → submit background executor task
   → return 202 queued
 ```
@@ -145,8 +148,11 @@ The executor launches only the configured `product_image_workflow.py` entrypoint
 - `MUSEFORGE_RUN_SPEC_PATH`
 - `MUSEFORGE_VARIANTS`
 - `PYTHONUNBUFFERED=1`
+- `IMAGE_API_BASE_URL`, `IMAGE_API_ENDPOINT`, `IMAGE_API_KEY`
+- `IMAGE_MODEL`, `IMAGE_SIZE`, `IMAGE_QUALITY`
+- `MUSEFORGE_PROVIDER_CHANNEL_ID`, name, and routing mode
 
-Before launch, the backend writes `workspace/.museforge/runs/<run-id>/run-spec.json`. It contains the validated scope, execution limits, and optional canvas creative brief. The Skill appends those instructions to the selected task prompt while preserving product truth, references, physical rules, and compliance text.
+Before launch, the backend writes `workspace/.museforge/runs/<run-id>/run-spec.json`. It contains the validated scope, execution limits, optional canvas creative brief, and redacted provider/cost attribution. The encrypted API key remains in the separate database snapshot. The Skill appends creative instructions to the selected task prompt while preserving product truth, references, physical rules, and compliance text.
 
 The Skill emits line-delimited events prefixed with `MUSEFORGE_EVENT `. The adapter validates every event against the persisted request scope before updating a planned item.
 
@@ -217,7 +223,9 @@ The lower-level `image2_combo_batch.py` is used by the reviewed Skill flow; it i
 - only the server-configured Skill entrypoint is executable;
 - execution has a bounded timeout;
 - event output is treated as untrusted until scope and file checks pass;
-- provider secrets remain in the server environment.
+- managed provider secrets are encrypted at rest, redacted from API responses, excluded from run specs, and exposed only to the selected child process environment;
+- the local master key is database-adjacent, mode `0600`, ignored by Git, and must travel with database backups;
+- Auto routing compares only enabled channels with positive rates in the configured currency.
 
 ### File safety
 
@@ -239,6 +247,7 @@ The lower-level `image2_combo_batch.py` is used by the reviewed Skill flow; it i
 | Runs | `POST /api/generation-runs`, `GET /api/generation-runs`, `GET /api/generation-runs/{id}` |
 | Candidates | `GET /api/candidates`, image `GET`, decision `PATCH`, deletion `DELETE` |
 | Workflow | `POST /api/workflow/prepare`, `preview`, and gated `generate` |
+| Providers | `GET /api/provider-config`, `POST/PATCH /api/provider-channels`, `PUT /api/provider-routing` |
 
 OpenAPI schemas are available from `/docs` while the API is running.
 

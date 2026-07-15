@@ -41,9 +41,9 @@ import {
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ARTBOARD, StudioCanvas, type CanvasViewport, type StudioCanvasHandle } from '../components/StudioCanvas'
-import { createGenerationRun, importWorkspaceAsset, listCandidates, loadCanvas, previewWorkflow, saveCanvas } from '../lib/api'
+import { createGenerationRun, getProviderConfig, importWorkspaceAsset, listCandidates, loadCanvas, previewWorkflow, saveCanvas } from '../lib/api'
 import { useAppStore } from '../store/appStore'
-import type { AssetItem, CanvasNode, PromptDraft, ShotType } from '../types'
+import type { AssetItem, CanvasNode, PromptDraft, ProviderConfig, ProviderQuality, ShotType } from '../types'
 import '../studio-enhancements.css'
 
 const shotOptions: Array<{ id: ShotType; label: string; short: string }> = [
@@ -268,6 +268,11 @@ function Inspector({
   referenceCount,
   variants,
   setVariants,
+  providerConfig,
+  providerChoice,
+  setProviderChoice,
+  quality,
+  setQuality,
   preflightState,
   selectedNodes,
   onUpdateSelected,
@@ -286,6 +291,11 @@ function Inspector({
   referenceCount: number
   variants: number
   setVariants: (value: number) => void
+  providerConfig?: ProviderConfig
+  providerChoice: string
+  setProviderChoice: (value: string) => void
+  quality: ProviderQuality
+  setQuality: (value: ProviderQuality) => void
   preflightState: 'idle' | 'checking' | 'passed' | 'failed'
   selectedNodes: CanvasNode[]
   onUpdateSelected: (patch: Partial<CanvasNode>) => void
@@ -302,6 +312,9 @@ function Inspector({
   const [advanced, setAdvanced] = useState(false)
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : undefined
   const selectedIsBackground = selectedNode?.id === 'scene-background'
+  const activeChannels = providerConfig?.channels.filter((channel) => channel.active) ?? []
+  const selectedChannel = activeChannels.find((channel) => channel.id === providerChoice)
+  const providerLabel = providerChoice === 'auto' ? 'Auto 最低价' : selectedChannel?.name ?? '工作区默认'
 
   useEffect(() => {
     if (selectedNodes.length) setTab('properties')
@@ -335,8 +348,8 @@ function Inspector({
           </div>
 
           <div className="inspector-section">
-            <button className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}><span>生成参数</span><span>{variants} 个候选 · 服务端 Provider</span><ChevronDown size={15} className={advanced ? 'rotated' : ''} /></button>
-            {advanced && <div className="advanced-grid truthful"><label>候选数<select value={variants} onChange={(event) => setVariants(Number(event.target.value))}><option value="2">2</option><option value="4">4</option><option value="6">6</option></select></label><div className="server-parameter"><span>模型 / 尺寸 / 质量</span><strong>由本地 .env 与 Skill 决定</strong><small>运行结果会记录实际模型与质量。</small></div></div>}
+            <button className="advanced-toggle" onClick={() => setAdvanced((value) => !value)}><span>生成参数</span><span>{variants} 个候选 · {providerLabel}</span><ChevronDown size={15} className={advanced ? 'rotated' : ''} /></button>
+            {advanced && <div className="advanced-grid truthful provider-parameters"><label>候选数<select value={variants} onChange={(event) => setVariants(Number(event.target.value))}><option value="2">2</option><option value="4">4</option><option value="6">6</option></select></label><label>质量<select value={quality} onChange={(event) => setQuality(event.target.value as ProviderQuality)}><option value="low">低质量</option><option value="medium">中质量</option><option value="high">高质量</option></select></label><label className="wide">本批次渠道<select value={providerChoice} onChange={(event) => setProviderChoice(event.target.value)}><option value="default">工作区默认</option><option value="auto">Auto · 同币种最低价</option>{activeChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name} · {channel.rates[quality] > 0 ? `${channel.rates[quality].toFixed(4)} ${channel.currency}` : '费率未标注'}</option>)}</select></label><div className="server-parameter wide"><span>模型 / 尺寸 / 路由</span><strong>{selectedChannel?.model ?? '由默认路由决定'} · 1024 × 1024</strong><small>选路在服务端完成并固化到本次运行，不会把 API Key 写入画布。</small></div></div>}
           </div>
 
           <div className={`preflight-card ${preflightState}`}>
@@ -407,6 +420,9 @@ export function StudioPage() {
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 0, y: 0, zoom: 0.78, mode: 'fit' })
   const [prompt, setPromptState] = useState(() => defaultPrompt(selectedProduct))
   const [variants, setVariants] = useState(4)
+  const [providerConfig, setProviderConfig] = useState<ProviderConfig>()
+  const [providerChoice, setProviderChoice] = useState('default')
+  const [quality, setQuality] = useState<ProviderQuality>('low')
   const [preflightState, setPreflightState] = useState<'idle' | 'checking' | 'passed' | 'failed'>('idle')
   const [generating, setGenerating] = useState(false)
   const [resultAssets, setResultAssets] = useState<AssetItem[]>([])
@@ -437,6 +453,11 @@ export function StudioPage() {
   }
   const activeCanvasId = useRef(canvasId)
   const activeTool = spaceHand ? 'hand' : tool
+
+  useEffect(() => {
+    if (!apiOnline || demoMode) return
+    void getProviderConfig().then(setProviderConfig).catch(() => undefined)
+  }, [apiOnline, demoMode])
 
   const selectedProductRecord = workspace?.products.find((product) => product.id === selectedProduct)
   const selectedTaskRecord = workspace?.combinations
@@ -964,9 +985,13 @@ export function StudioPage() {
           variants,
           concurrency: 1,
           creativeBrief: promptRef.current,
+          providerMode: providerChoice === 'default' ? 'default' : providerChoice === 'auto' ? 'auto' : 'fixed',
+          providerChannelId: providerChoice !== 'default' && providerChoice !== 'auto' ? providerChoice : undefined,
+          quality,
+          size: '1024x1024',
         })
         setActiveRunId(run.id)
-        notify({ title: '已交给本地 Skill 执行', detail: `运行 ${run.id} · ${variants} 个候选 · 创意指令已固化`, tone: 'success' })
+        notify({ title: '已交给本地 Skill 执行', detail: `运行 ${run.id} · ${variants} 个候选 · ${run.provider?.channelName ?? '默认渠道'}`, tone: 'success' })
         navigate(`/queue?run=${encodeURIComponent(run.id)}`)
       } catch (error) {
         setPreflightState('failed')
@@ -986,7 +1011,7 @@ export function StudioPage() {
     notify({ title: '演示任务（未调用生图服务）', detail: '用于预览队列与审核交互', tone: 'neutral' })
     window.setTimeout(() => { updateJob(id, { status: 'running', progress: 68 }); setGenerating(false) }, 500)
     window.setTimeout(() => updateJob(id, { status: 'succeeded', progress: 100, thumbnail: outputByShot[selectedShot] }), 2200)
-  }, [addJob, apiOnline, demoMode, generating, navigate, notify, save, saveState, selectedProduct, selectedShot, selectedTask, setActiveRunId, updateJob, variants, workspace?.liveGenerationEnabled])
+  }, [addJob, apiOnline, demoMode, generating, navigate, notify, providerChoice, quality, save, saveState, selectedProduct, selectedShot, selectedTask, setActiveRunId, updateJob, variants, workspace?.liveGenerationEnabled])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1126,7 +1151,7 @@ export function StudioPage() {
           <div className="canvas-hint"><Grip size={13} />空白拖拽框选 · Shift 多选 · 自动吸附 · 方向键微移</div>
           <button className="queue-peek" onClick={() => navigate(activeRunId ? `/queue?run=${encodeURIComponent(activeRunId)}` : '/queue')}><span><i />{activeRunId ? `真实运行 ${activeRunId.slice(0, 8)} 已接入队列` : demoMode && jobs.filter((job) => job.status === 'running').length ? `${jobs.filter((job) => job.status === 'running').length} 个演示任务生成中` : '本地候选暂存已启用'}</span><strong>查看运行队列 <ChevronDown size={14} /></strong></button>
         </section>
-        <Inspector prompt={prompt} setPrompt={setPrompt} referenceAssets={referenceAssets} referenceCount={selectedTaskRecord?.referenceCount ?? 0} variants={variants} setVariants={setVariants} preflightState={preflightState} selectedNodes={selectedNodes} onUpdateSelected={updateSelected} onGenerate={() => { void generate() }} onPreflight={() => { void preflight() }} onAlign={alignSelected} onDistribute={distributeSelected} onLayerUp={() => primarySelectedId && moveLayer(primarySelectedId, 'up')} onLayerDown={() => primarySelectedId && moveLayer(primarySelectedId, 'down')} generating={generating} canvasVersion={canvasVersion} />
+        <Inspector prompt={prompt} setPrompt={setPrompt} referenceAssets={referenceAssets} referenceCount={selectedTaskRecord?.referenceCount ?? 0} variants={variants} setVariants={setVariants} providerConfig={providerConfig} providerChoice={providerChoice} setProviderChoice={setProviderChoice} quality={quality} setQuality={setQuality} preflightState={preflightState} selectedNodes={selectedNodes} onUpdateSelected={updateSelected} onGenerate={() => { void generate() }} onPreflight={() => { void preflight() }} onAlign={alignSelected} onDistribute={distributeSelected} onLayerUp={() => primarySelectedId && moveLayer(primarySelectedId, 'up')} onLayerDown={() => primarySelectedId && moveLayer(primarySelectedId, 'down')} generating={generating} canvasVersion={canvasVersion} />
       </div>
       <div className="studio-warning"><ScanSearch size={14} /><span>生成依据：任务 prompts.json + reference_manifest.json + 当前画布创意指令</span><strong>{selectedTaskRecord?.hasReferenceManifest ? '参考清单已发布' : '参考清单缺失'}</strong></div>
     </div>

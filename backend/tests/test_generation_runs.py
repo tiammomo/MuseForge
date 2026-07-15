@@ -312,6 +312,118 @@ def test_candidate_id_lookup_never_serves_tampered_paths(tmp_path: Path) -> None
         assert secret.read_text(encoding="utf-8") == "SECRET=never-return-this"
 
 
+def test_provider_registry_auto_routing_and_secret_redaction(tmp_path: Path) -> None:
+    root, script = _workspace(tmp_path, script_body=FAKE_GENERATOR)
+    settings = _settings(tmp_path, root, script, enabled=True)
+    with TestClient(create_app(settings)) as client:
+        channels = [
+            {
+                "name": "渠道 A",
+                "base_url": "https://channel-a.invalid/v1",
+                "endpoint": "/images/edits",
+                "api_key": "sk-secret-channel-a",
+                "model": "gpt-image-2",
+                "currency": "CNY",
+                "rates": {"low": 0.08, "medium": 0.16, "high": 0.32},
+            },
+            {
+                "name": "渠道 B",
+                "base_url": "https://channel-b.invalid/v1",
+                "endpoint": "/images/edits",
+                "api_key": "sk-secret-channel-b",
+                "model": "gpt-image-2-2026-04-21",
+                "currency": "CNY",
+                "rates": {"low": 0.03, "medium": 0.12, "high": 0.28},
+            },
+            {
+                "name": "美元渠道",
+                "base_url": "https://usd-channel.invalid/v1",
+                "endpoint": "/images/edits",
+                "api_key": "sk-secret-usd",
+                "model": "gpt-image-2",
+                "currency": "USD",
+                "rates": {"low": 0.001, "medium": 0.002, "high": 0.003},
+            },
+        ]
+        created = []
+        for payload in channels:
+            response = client.post("/api/provider-channels", json=payload)
+            assert response.status_code == 201
+            created.append(response.json())
+            assert "api_key" not in response.json()
+            assert "api_key_encrypted" not in response.json()
+            assert "secret" not in response.text
+
+        config = client.get("/api/provider-config")
+        assert config.status_code == 200
+        assert config.json()["summary"]["active_channel_count"] == 3
+        assert "sk-secret" not in config.text
+        assert all(item["api_key_hint"].startswith("••••") for item in config.json()["channels"])
+
+        routing = client.put(
+            "/api/provider-routing",
+            json={"mode": "auto", "currency": "CNY"},
+        )
+        assert routing.status_code == 200
+
+        response = client.post(
+            "/api/generation-runs",
+            json={
+                "product": "SKU-1",
+                "tasks": ["单品"],
+                "shots": ["main"],
+                "variants": 1,
+                "providerMode": "auto",
+                "quality": "low",
+                "size": "1024x1024",
+            },
+        )
+        assert response.status_code == 202
+        queued = response.json()
+        assert queued["provider"]["channel_name"] == "渠道 B"
+        assert queued["provider"]["unit_price"] == 0.03
+        assert queued["provider"]["currency"] == "CNY"
+        assert "api_key" not in response.json()["provider"]
+        assert "api_key_encrypted" not in response.json()["provider"]
+        run = _wait_for_run(client, queued["id"])
+        assert run["status"] == "completed"
+
+        run_spec = (root / ".museforge" / "runs" / queued["id"] / "run-spec.json")
+        assert "sk-secret" not in run_spec.read_text(encoding="utf-8")
+
+        cheapest_id = next(item["id"] for item in created if item["name"] == "渠道 B")
+        disabled = client.patch(
+            f"/api/provider-channels/{cheapest_id}", json={"active": False}
+        )
+        assert disabled.status_code == 200
+        fixed = client.post(
+            "/api/generation-runs",
+            json={
+                "product": "SKU-1",
+                "tasks": ["单品"],
+                "shots": ["main"],
+                "providerMode": "fixed",
+                "providerChannelId": cheapest_id,
+            },
+        )
+        assert fixed.status_code == 422
+        assert "停用" in fixed.text
+
+    with sqlite3.connect(settings.database_path) as connection:
+        encrypted = connection.execute(
+            "SELECT api_key_encrypted FROM provider_channels WHERE name = '渠道 B'"
+        ).fetchone()[0]
+        assert encrypted != "sk-secret-channel-b"
+        assert "sk-secret-channel-b" not in encrypted
+        snapshot = connection.execute(
+            "SELECT channel_name, unit_price FROM generation_provider_snapshots WHERE job_id = ?",
+            (queued["id"],),
+        ).fetchone()
+        assert snapshot == ("渠道 B", 0.03)
+    key_path = settings.database_path.with_suffix(settings.database_path.suffix + ".key")
+    assert key_path.stat().st_mode & 0o777 == 0o600
+
+
 def test_legacy_database_is_migrated_without_losing_jobs(tmp_path: Path) -> None:
     database = tmp_path / "legacy.sqlite3"
     timestamp = "2026-01-01T00:00:00+00:00"
@@ -350,5 +462,11 @@ def test_legacy_database_is_migrated_without_losing_jobs(tmp_path: Path) -> None
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
-        assert {"generation_items", "generation_events"} <= tables
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert {
+            "generation_items",
+            "generation_events",
+            "provider_channels",
+            "provider_routing_settings",
+            "generation_provider_snapshots",
+        } <= tables
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3

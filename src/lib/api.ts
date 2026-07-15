@@ -5,6 +5,12 @@ import type {
   GenerationRun,
   GenerationRunRequest,
   GenerationRunStatus,
+  GenerationProviderSnapshot,
+  ProviderChannel,
+  ProviderChannelInput,
+  ProviderConfig,
+  ProviderQuality,
+  ProviderRouting,
   ShotType,
   WorkflowResult,
   WorkspaceCombination,
@@ -53,6 +59,57 @@ function asStrings(value: unknown): string[] {
 function asShots(value: unknown): ShotType[] {
   const values = asStrings(value)
   return values.filter((item): item is ShotType => shotTypes.includes(item as ShotType))
+}
+
+function normalizeProviderSnapshot(value: unknown): GenerationProviderSnapshot | undefined {
+  const item = asRecord(value)
+  if (!Object.keys(item).length) return undefined
+  const quality = asString(item.quality, 'low') as ProviderQuality
+  return {
+    channelId: asString(item.channelId ?? item.channel_id) || undefined,
+    channelName: asString(item.channelName ?? item.channel_name, '未命名渠道'),
+    model: asString(item.model, 'gpt-image-2'),
+    quality: ['low', 'medium', 'high'].includes(quality) ? quality : 'low',
+    size: '1024x1024',
+    unitPrice: Math.max(0, asNumber(item.unitPrice ?? item.unit_price)),
+    currency: asString(item.currency, 'USD'),
+    routingMode: asString(item.routingMode ?? item.routing_mode, 'legacy'),
+    source: asString(item.source) || undefined,
+  }
+}
+
+function normalizeProviderChannel(value: unknown): ProviderChannel {
+  const item = asRecord(value)
+  const rates = asRecord(item.rates)
+  return {
+    id: asString(item.id),
+    name: asString(item.name),
+    baseUrl: asString(item.baseUrl ?? item.base_url),
+    endpoint: asString(item.endpoint, '/images/edits'),
+    apiKeyHint: asString(item.apiKeyHint ?? item.api_key_hint),
+    hasApiKey: Boolean(item.hasApiKey ?? item.has_api_key),
+    model: asString(item.model, 'gpt-image-2'),
+    active: Boolean(item.active),
+    currency: asString(item.currency, 'CNY'),
+    rates: {
+      low: Math.max(0, asNumber(rates.low)),
+      medium: Math.max(0, asNumber(rates.medium)),
+      high: Math.max(0, asNumber(rates.high)),
+    },
+    createdAt: asString(item.createdAt ?? item.created_at),
+    updatedAt: asString(item.updatedAt ?? item.updated_at),
+    lastUsedAt: asString(item.lastUsedAt ?? item.last_used_at) || undefined,
+  }
+}
+
+function normalizeProviderRouting(value: unknown): ProviderRouting {
+  const item = asRecord(value)
+  return {
+    mode: item.mode === 'fixed' ? 'fixed' : 'auto',
+    fixedChannelId: asString(item.fixedChannelId ?? item.fixed_channel_id) || undefined,
+    currency: asString(item.currency, 'CNY'),
+    updatedAt: asString(item.updatedAt ?? item.updated_at) || undefined,
+  }
 }
 
 function errorMessage(body: unknown, fallback: string): string {
@@ -214,11 +271,13 @@ function normalizeRun(value: unknown): GenerationRun {
     createdAt: asString(item.createdAt ?? item.created_at),
     updatedAt: asString(item.updatedAt ?? item.updated_at) || undefined,
     thumbnail: asString(item.thumbnail ?? item.thumbnail_url) || undefined,
+    provider: normalizeProviderSnapshot(item.provider ?? payload.provider),
   }
 }
 
 function normalizeCandidate(value: unknown): GenerationCandidate {
   const item = asRecord(value)
+  const metadata = asRecord(item.metadata)
   const shotValue = asString(item.shot, 'main')
   const reviewStatusValue = asString(item.reviewStatus ?? item.review_status ?? item.decision, 'pending')
   const storageStatus = item.storage_status === 'promoted' ? 'promoted' : item.storage_status === 'staged' ? 'staged' : undefined
@@ -246,6 +305,9 @@ function normalizeCandidate(value: unknown): GenerationCandidate {
     quality: asString(item.quality) || undefined,
     estimatedCost: asNumber(item.estimatedCost ?? item.estimated_cost) || undefined,
     elapsedSeconds: asNumber(item.elapsedSeconds ?? item.elapsed_seconds) || undefined,
+    currency: asString(item.currency ?? metadata.currency) || undefined,
+    providerChannelId: asString(item.providerChannelId ?? item.provider_channel_id ?? metadata.provider_channel_id) || undefined,
+    providerChannelName: asString(item.providerChannelName ?? item.provider_channel_name ?? metadata.provider_channel_name) || undefined,
   }
 }
 
@@ -321,6 +383,65 @@ export async function createGenerationRun(payload: GenerationRunRequest): Promis
     body: JSON.stringify(payload),
   })
   return normalizeRun(result)
+}
+
+export async function getProviderConfig(): Promise<ProviderConfig> {
+  const result = asRecord(await request<unknown>('/api/provider-config'))
+  const summary = asRecord(result.summary)
+  return {
+    channels: Array.isArray(result.channels) ? result.channels.map(normalizeProviderChannel) : [],
+    routing: normalizeProviderRouting(result.routing),
+    summary: {
+      channelCount: asNumber(summary.channelCount ?? summary.channel_count),
+      activeChannelCount: asNumber(summary.activeChannelCount ?? summary.active_channel_count),
+      pricedChannelCount: asNumber(summary.pricedChannelCount ?? summary.priced_channel_count),
+    },
+  }
+}
+
+function providerChannelBody(input: ProviderChannelInput, includeKey: boolean): Record<string, unknown> {
+  return {
+    name: input.name,
+    base_url: input.baseUrl,
+    endpoint: input.endpoint,
+    ...(includeKey && input.apiKey ? { api_key: input.apiKey } : {}),
+    model: input.model,
+    active: input.active,
+    currency: input.currency,
+    rates: input.rates,
+  }
+}
+
+export async function createProviderChannel(input: ProviderChannelInput): Promise<ProviderChannel> {
+  return normalizeProviderChannel(await request<unknown>('/api/provider-channels', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(providerChannelBody(input, true)),
+  }))
+}
+
+export async function updateProviderChannel(id: string, input: ProviderChannelInput): Promise<ProviderChannel> {
+  return normalizeProviderChannel(await request<unknown>(`/api/provider-channels/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify(providerChannelBody(input, Boolean(input.apiKey))),
+  }))
+}
+
+export async function setProviderChannelActive(id: string, active: boolean): Promise<ProviderChannel> {
+  return normalizeProviderChannel(await request<unknown>(`/api/provider-channels/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify({ active }),
+  }))
+}
+
+export async function updateProviderRouting(input: Pick<ProviderRouting, 'mode' | 'fixedChannelId' | 'currency'>): Promise<ProviderRouting> {
+  return normalizeProviderRouting(await request<unknown>('/api/provider-routing', {
+    method: 'PUT',
+    headers: jsonHeaders,
+    body: JSON.stringify({ mode: input.mode, fixed_channel_id: input.fixedChannelId, currency: input.currency }),
+  }))
 }
 
 export async function listGenerationRuns(): Promise<GenerationRun[]> {

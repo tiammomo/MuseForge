@@ -111,13 +111,68 @@ class Repository:
 
                 CREATE INDEX IF NOT EXISTS idx_generation_events_job
                 ON generation_events(job_id, seq);
+
+                CREATE TABLE IF NOT EXISTS provider_channels (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    endpoint TEXT NOT NULL DEFAULT '/images/edits',
+                    api_key_encrypted TEXT NOT NULL,
+                    api_key_hint TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL DEFAULT 'gpt-image-2',
+                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+                    currency TEXT NOT NULL DEFAULT 'CNY',
+                    rates_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_channels_name
+                ON provider_channels(name COLLATE NOCASE);
+
+                CREATE INDEX IF NOT EXISTS idx_provider_channels_active
+                ON provider_channels(active, updated_at DESC);
+
+                CREATE TABLE IF NOT EXISTS provider_routing_settings (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    mode TEXT NOT NULL DEFAULT 'auto' CHECK(mode IN ('auto', 'fixed')),
+                    fixed_channel_id TEXT REFERENCES provider_channels(id) ON DELETE SET NULL,
+                    currency TEXT NOT NULL DEFAULT 'CNY',
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS generation_provider_snapshots (
+                    job_id TEXT PRIMARY KEY REFERENCES generation_jobs(id) ON DELETE CASCADE,
+                    channel_id TEXT,
+                    channel_name TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    api_key_encrypted TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    quality TEXT NOT NULL,
+                    size TEXT NOT NULL,
+                    unit_price REAL NOT NULL DEFAULT 0,
+                    currency TEXT NOT NULL,
+                    routing_mode TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'managed',
+                    created_at TEXT NOT NULL
+                );
                 """
             )
             current_version = int(
                 connection.execute("PRAGMA user_version").fetchone()[0]
             )
-            if current_version < 2:
-                connection.execute("PRAGMA user_version = 2")
+            if current_version < 3:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO provider_routing_settings(
+                        id, mode, fixed_channel_id, currency, updated_at
+                    ) VALUES (1, 'auto', NULL, 'CNY', ?)
+                    """,
+                    (utc_now(),),
+                )
+                connection.execute("PRAGMA user_version = 3")
         self.ensure_demo_job()
 
     @staticmethod
@@ -269,6 +324,202 @@ class Repository:
             "updated_at": row["updated_at"],
         }
 
+    @staticmethod
+    def _provider_channel_from_row(
+        row: sqlite3.Row | None, *, include_secrets: bool = False
+    ) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        rates = Repository._decode_json(row["rates_json"], {})
+        if not isinstance(rates, dict):
+            rates = {}
+        result = {
+            "id": row["id"],
+            "name": row["name"],
+            "base_url": row["base_url"],
+            "endpoint": row["endpoint"],
+            "api_key_hint": row["api_key_hint"],
+            "has_api_key": bool(row["api_key_encrypted"]),
+            "model": row["model"],
+            "active": bool(row["active"]),
+            "currency": row["currency"],
+            "rates": {
+                quality: float(rates.get(quality, 0) or 0)
+                for quality in ("low", "medium", "high")
+            },
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "last_used_at": row["last_used_at"],
+        }
+        if include_secrets:
+            result["api_key_encrypted"] = row["api_key_encrypted"]
+        return result
+
+    def list_provider_channels(
+        self, *, include_secrets: bool = False
+    ) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM provider_channels
+                ORDER BY active DESC, updated_at DESC, name COLLATE NOCASE ASC
+                """
+            ).fetchall()
+        return [
+            channel
+            for row in rows
+            if (
+                channel := self._provider_channel_from_row(
+                    row, include_secrets=include_secrets
+                )
+            )
+            is not None
+        ]
+
+    def get_provider_channel(
+        self, channel_id: str, *, include_secrets: bool = False
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM provider_channels WHERE id = ?", (channel_id,)
+            ).fetchone()
+        return self._provider_channel_from_row(row, include_secrets=include_secrets)
+
+    def create_provider_channel(
+        self,
+        *,
+        name: str,
+        base_url: str,
+        endpoint: str,
+        api_key_encrypted: str,
+        api_key_hint: str,
+        model: str,
+        active: bool,
+        currency: str,
+        rates: dict[str, float],
+    ) -> dict[str, Any]:
+        channel_id = f"provider-{uuid.uuid4().hex[:16]}"
+        timestamp = utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO provider_channels(
+                    id, name, base_url, endpoint, api_key_encrypted,
+                    api_key_hint, model, active, currency, rates_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    channel_id,
+                    name,
+                    base_url,
+                    endpoint,
+                    api_key_encrypted,
+                    api_key_hint,
+                    model,
+                    int(active),
+                    currency,
+                    json.dumps(rates, ensure_ascii=False, separators=(",", ":")),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM provider_channels WHERE id = ?", (channel_id,)
+            ).fetchone()
+        result = self._provider_channel_from_row(row)
+        if result is None:  # pragma: no cover
+            raise RuntimeError("Provider channel creation failed")
+        return result
+
+    def update_provider_channel(
+        self, channel_id: str, patch: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        allowed = {
+            "name",
+            "base_url",
+            "endpoint",
+            "api_key_encrypted",
+            "api_key_hint",
+            "model",
+            "active",
+            "currency",
+            "rates",
+        }
+        values = {key: value for key, value in patch.items() if key in allowed}
+        if not values:
+            return self.get_provider_channel(channel_id)
+        assignments: list[str] = []
+        params: list[Any] = []
+        for key, value in values.items():
+            column = "rates_json" if key == "rates" else key
+            if key == "rates":
+                value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            elif key == "active":
+                value = int(bool(value))
+            assignments.append(f"{column} = ?")
+            params.append(value)
+        assignments.append("updated_at = ?")
+        params.extend([utc_now(), channel_id])
+        with self._connect() as connection:
+            connection.execute(
+                f"UPDATE provider_channels SET {', '.join(assignments)} WHERE id = ?",
+                tuple(params),
+            )
+            row = connection.execute(
+                "SELECT * FROM provider_channels WHERE id = ?", (channel_id,)
+            ).fetchone()
+        return self._provider_channel_from_row(row)
+
+    def get_provider_routing(self) -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM provider_routing_settings WHERE id = 1"
+            ).fetchone()
+        if row is None:  # pragma: no cover - initialize always seeds this row
+            return {
+                "mode": "auto",
+                "fixed_channel_id": None,
+                "currency": "CNY",
+                "updated_at": utc_now(),
+            }
+        return {
+            "mode": row["mode"],
+            "fixed_channel_id": row["fixed_channel_id"],
+            "currency": row["currency"],
+            "updated_at": row["updated_at"],
+        }
+
+    def update_provider_routing(
+        self, *, mode: str, fixed_channel_id: str | None, currency: str
+    ) -> dict[str, Any]:
+        timestamp = utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO provider_routing_settings(
+                    id, mode, fixed_channel_id, currency, updated_at
+                ) VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    mode = excluded.mode,
+                    fixed_channel_id = excluded.fixed_channel_id,
+                    currency = excluded.currency,
+                    updated_at = excluded.updated_at
+                """,
+                (mode, fixed_channel_id, currency, timestamp),
+            )
+        return self.get_provider_routing()
+
+    def get_generation_provider_snapshot(
+        self, job_id: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM generation_provider_snapshots WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def _generation_summary(self, job: dict[str, Any]) -> dict[str, Any]:
         if job.get("action") != "generate":
             return job
@@ -317,6 +568,9 @@ class Repository:
                 "shots": requested_shots,
                 "variants": requested_variants,
                 "concurrency": int(request.get("concurrency") or 1),
+                "provider": request.get("provider")
+                if isinstance(request.get("provider"), dict)
+                else None,
                 "expected_candidate_count": expected,
                 "candidate_count": int(row["generated_count"] or 0),
                 "completed_count": completed,
@@ -413,6 +667,7 @@ class Repository:
         *,
         request: dict[str, Any],
         command: list[str],
+        provider_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         job = self.create_job(action="generate", request=request, command=command)
         product = str(request["product"])
@@ -450,6 +705,37 @@ class Repository:
                 """,
                 rows,
             )
+            if provider_snapshot is not None:
+                connection.execute(
+                    """
+                    INSERT INTO generation_provider_snapshots(
+                        job_id, channel_id, channel_name, base_url, endpoint,
+                        api_key_encrypted, model, quality, size, unit_price,
+                        currency, routing_mode, source, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        job["id"],
+                        provider_snapshot.get("channel_id"),
+                        provider_snapshot["channel_name"],
+                        provider_snapshot["base_url"],
+                        provider_snapshot["endpoint"],
+                        provider_snapshot["api_key_encrypted"],
+                        provider_snapshot["model"],
+                        provider_snapshot["quality"],
+                        provider_snapshot["size"],
+                        float(provider_snapshot.get("unit_price") or 0),
+                        provider_snapshot["currency"],
+                        provider_snapshot["routing_mode"],
+                        provider_snapshot.get("source", "managed"),
+                        timestamp,
+                    ),
+                )
+                if provider_snapshot.get("channel_id"):
+                    connection.execute(
+                        "UPDATE provider_channels SET last_used_at = ? WHERE id = ?",
+                        (timestamp, provider_snapshot["channel_id"]),
+                    )
         self.add_event(
             job["id"],
             "run.queued",
@@ -459,6 +745,7 @@ class Repository:
                 "shots": shots,
                 "variants": variants,
                 "total_items": len(rows),
+                "provider": request.get("provider"),
             },
         )
         created = self.get_generation_run(job["id"])

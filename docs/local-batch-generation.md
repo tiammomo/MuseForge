@@ -67,26 +67,20 @@ Before live generation, verify:
 - reference roles and counts comply with standalone/combination limits;
 - product facts and visible claims are supported by source evidence.
 
-## 4. Enable the provider
+## 4. Enable managed providers
 
 ```bash
 cp .env.example .env
 ```
 
-Minimum example:
+Minimum gate configuration:
 
 ```dotenv
 MUSEFORGE_ENABLE_LIVE_GENERATION=true
-IMAGE_API_BASE_URL=https://your-provider.example/v1
-IMAGE_API_ENDPOINT=/images/edits
-IMAGE_API_KEY=replace-me
-IMAGE_MODEL=gpt-image-2
-IMAGE_SIZE=1024x1024
-IMAGE_QUALITY=medium
 IMAGE_OUTPUT_FORMAT=png
 ```
 
-Restart the API after configuration changes. `.env` is loaded without overriding already exported shell variables.
+Restart the API, then register channels and rate cards in **连接与设置 → 渠道与路由**. The old `IMAGE_API_*` variables remain available as a compatibility fallback when no managed channel exists. See [GPT Image 2 provider routing](provider-routing.md).
 
 Live generation is disabled when the switch is missing or false, even if an API key is present.
 
@@ -97,9 +91,10 @@ Live generation is disabled when the switch is missing or false, even if an API 
 3. Select one or more task rows.
 4. Select one or more shot columns.
 5. Choose 1–6 candidates per work item.
-6. Choose local concurrency from 1–10.
-7. Resolve all blocked cells.
-8. Submit the batch.
+6. Choose the workspace default, Auto, or one explicit channel and quality.
+7. Choose local concurrency from 1–10.
+8. Resolve all blocked cells.
+9. Submit the batch.
 
 The expected candidate count is:
 

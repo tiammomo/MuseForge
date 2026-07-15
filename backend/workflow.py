@@ -15,6 +15,7 @@ from typing import Any
 
 from .config import Settings
 from .database import Repository
+from .providers import ProviderService
 
 
 ALLOWED_ACTIONS = {"prepare", "preview", "generate"}
@@ -60,8 +61,11 @@ def validate_shot(value: str) -> str:
 class WorkflowRunner:
     """Safe adapter around the deterministic product image workflow script."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self, settings: Settings, *, provider_service: ProviderService | None = None
+    ):
         self.settings = settings
+        self.provider_service = provider_service
 
     def _validate_product_exists(self, product: str | None) -> None:
         if product is None:
@@ -407,7 +411,7 @@ class WorkflowRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         run_spec_path = run_dir / "run-spec.json"
         run_spec = {
-            "version": 1,
+            "version": 2,
             "run_id": job_id,
             "product": request.get("product"),
             "tasks": list(request.get("tasks") or []),
@@ -415,6 +419,7 @@ class WorkflowRunner:
             "variants": int(request.get("variants") or 1),
             "concurrency": int(request.get("concurrency") or 1),
             "creative_brief": dict(request.get("creative_brief") or {}),
+            "provider": dict(request.get("provider") or {}),
         }
         run_spec_path.write_text(
             json.dumps(run_spec, ensure_ascii=False, indent=2),
@@ -428,6 +433,7 @@ class WorkflowRunner:
                 "run_id": job_id,
                 "spec": run_spec_path.relative_to(workspace_root).as_posix(),
                 "creative_brief_applied": any(run_spec["creative_brief"].values()),
+                "provider": run_spec["provider"],
             },
         )
 
@@ -442,6 +448,8 @@ class WorkflowRunner:
                 "MUSEFORGE_VARIANTS": str(int(request.get("variants") or 1)),
             }
         )
+        if self.provider_service is not None:
+            env.update(self.provider_service.runtime_environment(job_id))
         output_lines: deque[str] = deque(maxlen=4000)
         process: subprocess.Popen[str] | None = None
         try:

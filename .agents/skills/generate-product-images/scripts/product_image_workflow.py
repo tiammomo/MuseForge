@@ -1099,6 +1099,17 @@ def candidate_event_payload(job: GenerationJob, result: dict[str, Any]) -> dict[
         "size": result.get("size", os.getenv("IMAGE_SIZE", "1024x1024")),
         "quality": result.get("quality", os.getenv("IMAGE_QUALITY", "low")),
         "reference_image_count": result.get("reference_image_count", len(job.refs)),
+        "provider_channel_id": result.get(
+            "provider_channel_id", os.getenv("MUSEFORGE_PROVIDER_CHANNEL_ID", "legacy")
+        ),
+        "provider_channel_name": result.get(
+            "provider_channel_name",
+            os.getenv("MUSEFORGE_PROVIDER_CHANNEL_NAME", "本地环境兼容渠道"),
+        ),
+        "provider_routing_mode": result.get(
+            "provider_routing_mode",
+            os.getenv("MUSEFORGE_PROVIDER_ROUTING_MODE", "legacy"),
+        ),
     }
 
 

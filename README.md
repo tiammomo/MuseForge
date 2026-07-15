@@ -53,6 +53,9 @@ The built-in e-commerce matrix covers:
 - Four-up candidate review, multi-select keep, and confirmed cleanup of rejected images.
 - Atomic promotion of kept candidates into the formal `workspace/组合/` library.
 - Stable formal-asset URLs when a selected result is sent to the canvas.
+- Frontend-managed GPT Image 2 channel registry with encrypted local credentials.
+- Per-quality rate cards, workspace defaults, fixed routing, and same-currency Auto cheapest routing.
+- Per-batch provider overrides from both the canvas and task matrix, with provider/cost attribution in the queue and candidate records.
 
 ### Skill integration
 
@@ -159,17 +162,19 @@ Live image calls are intentionally disabled by default.
 cp .env.example .env
 ```
 
-Configure the provider in `.env`:
+Enable the live-generation gate in `.env`:
 
 ```dotenv
 MUSEFORGE_ENABLE_LIVE_GENERATION=true
-IMAGE_API_BASE_URL=https://your-image-provider.example/v1
-IMAGE_API_ENDPOINT=/images/edits
-IMAGE_API_KEY=replace-me
-IMAGE_MODEL=gpt-image-2
 ```
 
-Restart the API after changing `.env`. Existing shell environment variables take precedence over file values.
+Restart the API, open **连接与设置 → 渠道与路由**, then register one or more GPT Image 2 compatible channels. Each channel records its model, edit endpoint, settlement currency, and low/medium/high per-image estimate. Choose either:
+
+- **Auto**: the server selects the lowest positive rate for the requested quality within the configured settlement currency;
+- **Fixed**: the server uses the named active channel;
+- **Per batch override**: canvas and task matrix selections override the workspace default for that run.
+
+Existing `IMAGE_API_*` environment variables remain a compatibility fallback only when no managed channel exists. See [Provider routing and credential storage](docs/provider-routing.md).
 
 Never place API keys in frontend source, canvas documents, prompt files, or committed Git history.
 
@@ -198,6 +203,9 @@ This boundary lets the website visualize the production process while only retai
 | `POST` | `/api/workspace/assets/import` | Persist a canvas import under the selected product and return a stable URL |
 | `GET/PUT` | `/api/canvases/{id}` | Load or save a canvas document |
 | `POST` | `/api/generation-runs` | Create an asynchronous local batch run |
+| `GET` | `/api/provider-config` | Read redacted channels, rate cards, and default routing |
+| `POST/PATCH` | `/api/provider-channels` | Register, edit, enable, or disable a local channel |
+| `PUT` | `/api/provider-routing` | Save Auto or fixed workspace routing |
 | `GET` | `/api/generation-runs` | List real generation runs |
 | `GET` | `/api/generation-runs/{id}` | Read run progress and events |
 | `GET` | `/api/candidates` | List staged or selected candidates |
@@ -234,6 +242,9 @@ The current suite covers API persistence, path security, stable canvas imports, 
 - Product, task, shot, candidate, canvas, and asset paths are validated at trust boundaries.
 - `.museforge` staging files cannot be read through the generic workspace asset route.
 - Live generation requires both an explicit server switch and an explicit product/task/shot request.
+- Managed API keys are encrypted at rest with a database-adjacent mode-`0600` master key and are never returned by the API.
+- Auto routing never compares different currencies and ignores missing/zero rates.
+- Provider selection and price are frozen per run; the encrypted credential snapshot is stored separately from `run-spec.json`.
 - Existing source assets, curated references, prompts, and formal outputs are outside rejected-candidate cleanup scope.
 
 ## Documentation
@@ -243,6 +254,7 @@ The current suite covers API persistence, path security, stable canvas imports, 
 - [Visual system and interaction direction](docs/design-system.md)
 - [Technical architecture and security boundaries](docs/architecture.md)
 - [Local Skill batch-generation lifecycle](docs/local-batch-generation.md)
+- [Provider routing and credential storage](docs/provider-routing.md)
 - [Development and operations guide](docs/development.md)
 - [Bundled generate-product-images Skill](.agents/skills/generate-product-images/SKILL.md)
 

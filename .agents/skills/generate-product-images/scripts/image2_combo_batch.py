@@ -301,6 +301,13 @@ def request_image(
             "estimated_cost": unit_cost,
             "currency": currency,
             "elapsed_seconds": elapsed,
+            "provider_channel_id": os.getenv("MUSEFORGE_PROVIDER_CHANNEL_ID", "legacy"),
+            "provider_channel_name": os.getenv(
+                "MUSEFORGE_PROVIDER_CHANNEL_NAME", "本地环境兼容渠道"
+            ),
+            "provider_routing_mode": os.getenv(
+                "MUSEFORGE_PROVIDER_ROUTING_MODE", "legacy"
+            ),
         }
         run_id = os.getenv("MUSEFORGE_RUN_ID", "").strip()
         if run_id:
@@ -319,6 +326,9 @@ def request_image(
             "estimated_cost": unit_cost,
             "currency": currency,
             "elapsed_seconds": elapsed,
+            "provider_channel_id": record["provider_channel_id"],
+            "provider_channel_name": record["provider_channel_name"],
+            "provider_routing_mode": record["provider_routing_mode"],
         }
     finally:
         for handle in handles:

@@ -174,7 +174,7 @@ export function QueuePage() {
                 {run.thumbnail ? <img src={run.thumbnail} alt="" /> : <span className="run-placeholder"><Images size={21} /></span>}
                 <p><strong>{run.product}</strong><small>{run.id} · {formatTime(run.createdAt)}</small>{run.demo && <em>演示</em>}</p>
               </div>
-              <div className="run-scope"><strong>{run.tasks.join('、') || '未指定任务'}</strong><small>{run.shots.map(shotLabel).join('、')} · 每组 {run.variants} 张 · 并发 {run.concurrency}</small></div>
+              <div className="run-scope"><strong>{run.tasks.join('、') || '未指定任务'}</strong><small>{run.shots.map(shotLabel).join('、')} · 每组 {run.variants} 张 · 并发 {run.concurrency}</small><small>{run.provider ? `${run.provider.channelName} · ${run.provider.quality} · ${run.provider.unitPrice.toFixed(4)} ${run.provider.currency}/张` : '旧版运行 · 未记录渠道'}</small></div>
               <div><span className={`job-status ${run.status}`}><StatusIcon size={12} className={run.status === 'running' ? 'spin' : ''} />{meta.label}</span>{run.message && <small className="run-message">{run.message}</small>}</div>
               <div className="run-progress-cell"><div><span>{run.candidateCount} / {run.expectedCount} 张</span><em>{run.progress}%</em></div><span className="run-progress"><i style={{ width: `${run.progress}%` }} /></span><small>{run.failedCount ? `${run.failedCount} 项失败` : run.pendingReviewCount ? `${run.pendingReviewCount} 张待审核` : '等待候选写入'}</small></div>
               <div className="run-next-action">

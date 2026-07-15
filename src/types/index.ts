@@ -6,6 +6,74 @@ export type GenerationRunStatus = 'queued' | 'running' | 'completed' | 'succeede
 
 export type CandidateReviewStatus = 'pending' | 'selected'
 
+export type ProviderQuality = 'low' | 'medium' | 'high'
+
+export type ProviderSize = '1024x1024'
+
+export type ProviderSelectionMode = 'default' | 'auto' | 'fixed'
+
+export interface ProviderRates {
+  low: number
+  medium: number
+  high: number
+}
+
+export interface ProviderChannel {
+  id: string
+  name: string
+  baseUrl: string
+  endpoint: string
+  apiKeyHint: string
+  hasApiKey: boolean
+  model: string
+  active: boolean
+  currency: string
+  rates: ProviderRates
+  createdAt: string
+  updatedAt: string
+  lastUsedAt?: string
+}
+
+export interface ProviderRouting {
+  mode: 'auto' | 'fixed'
+  fixedChannelId?: string
+  currency: string
+  updatedAt?: string
+}
+
+export interface ProviderConfig {
+  channels: ProviderChannel[]
+  routing: ProviderRouting
+  summary: {
+    channelCount: number
+    activeChannelCount: number
+    pricedChannelCount: number
+  }
+}
+
+export interface ProviderChannelInput {
+  name: string
+  baseUrl: string
+  endpoint: string
+  apiKey?: string
+  model: string
+  active: boolean
+  currency: string
+  rates: ProviderRates
+}
+
+export interface GenerationProviderSnapshot {
+  channelId?: string
+  channelName: string
+  model: string
+  quality: ProviderQuality
+  size: ProviderSize
+  unitPrice: number
+  currency: string
+  routingMode: string
+  source?: string
+}
+
 export interface WorkspaceProduct {
   id: string
   name: string
@@ -135,6 +203,10 @@ export interface GenerationRunRequest {
   variants: number
   concurrency: number
   creativeBrief?: PromptDraft
+  providerMode?: ProviderSelectionMode
+  providerChannelId?: string
+  quality?: ProviderQuality
+  size?: ProviderSize
 }
 
 export interface GenerationRun {
@@ -158,6 +230,7 @@ export interface GenerationRun {
   updatedAt?: string
   thumbnail?: string
   demo?: boolean
+  provider?: GenerationProviderSnapshot
 }
 
 export interface GenerationCandidate {
@@ -180,6 +253,9 @@ export interface GenerationCandidate {
   quality?: string
   estimatedCost?: number
   elapsedSeconds?: number
+  currency?: string
+  providerChannelId?: string
+  providerChannelName?: string
 }
 
 export type CanvasInsertMode = 'background' | 'layer'

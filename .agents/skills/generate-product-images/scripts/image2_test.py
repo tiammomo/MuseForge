@@ -155,7 +155,12 @@ def auth_headers() -> dict[str, str]:
 
 def cost_per_image(quality: str) -> float:
     key = f"IMAGE_COST_PER_IMAGE_{quality.upper()}_USD"
-    raw = os.getenv(key) or os.getenv("IMAGE_COST_PER_IMAGE_USD") or "0"
+    raw = (
+        os.getenv("MUSEFORGE_PROVIDER_UNIT_PRICE")
+        or os.getenv(key)
+        or os.getenv("IMAGE_COST_PER_IMAGE_USD")
+        or "0"
+    )
     try:
         return float(str(raw).strip().strip('"').strip("'"))
     except ValueError:

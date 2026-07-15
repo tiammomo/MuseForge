@@ -15,6 +15,7 @@ workspace/.museforge/
 workspace/.tmp/
 backend/data/*.sqlite3
 backend/data/*.sqlite3-*
+backend/data/*.sqlite3.key
 .tmp/
 workspace/组合/_workflow-cache/
 workspace/组合/**/主图/

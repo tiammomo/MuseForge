@@ -12,10 +12,10 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { createGenerationRun, prepareWorkflow } from '../lib/api'
+import { createGenerationRun, getProviderConfig, prepareWorkflow } from '../lib/api'
 import { demoWorkspace } from '../lib/demo'
 import { useAppStore } from '../store/appStore'
-import type { ShotType, WorkspaceTask } from '../types'
+import type { ProviderConfig, ProviderQuality, ShotType, WorkspaceTask } from '../types'
 import '../batch.css'
 
 const columns: Array<{ id: ShotType; label: string; short: string }> = [
@@ -77,6 +77,9 @@ export function MatrixPage() {
   const [selectedShots, setSelectedShots] = useState<Set<ShotType>>(new Set(['main', 'lifestyle-scene']))
   const [variants, setVariants] = useState(4)
   const [concurrency, setConcurrency] = useState(2)
+  const [providerConfig, setProviderConfig] = useState<ProviderConfig>()
+  const [providerChoice, setProviderChoice] = useState('default')
+  const [quality, setQuality] = useState<ProviderQuality>('low')
   const [search, setSearch] = useState('')
   const [preparing, setPreparing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -86,6 +89,11 @@ export function MatrixPage() {
       setSelectedProduct(workspace.products[0].id)
     }
   }, [selectedProduct, setSelectedProduct, workspace.products])
+
+  useEffect(() => {
+    if (!apiOnline || demoMode) return
+    void getProviderConfig().then(setProviderConfig).catch(() => undefined)
+  }, [apiOnline, demoMode])
 
   const product = workspace.products.find((item) => item.id === selectedProduct) ?? workspace.products[0]
   const combination = workspace.combinations?.find((item) => item.id === product?.id)
@@ -108,6 +116,11 @@ export function MatrixPage() {
     .filter((task) => selectedTasks.has(task.name))
     .reduce((sum, task) => sum + [...selectedShots].filter((shot) => taskState(task, shot) === 'blocked').length, 0)
   const liveReady = apiOnline && !demoMode && workspace.liveGenerationEnabled
+  const activeChannels = providerConfig?.channels.filter((channel) => channel.active) ?? []
+  const selectedChannel = activeChannels.find((channel) => channel.id === providerChoice)
+  const routeCaption = providerChoice === 'auto'
+    ? `Auto · ${providerConfig?.routing.currency ?? 'CNY'} 最低价`
+    : selectedChannel ? selectedChannel.name : '工作区默认'
 
   const toggleTask = (task: string) => setSelectedTasks((current) => {
     const next = new Set(current)
@@ -170,9 +183,13 @@ export function MatrixPage() {
         shots: [...selectedShots],
         variants,
         concurrency,
+        providerMode: providerChoice === 'default' ? 'default' : providerChoice === 'auto' ? 'auto' : 'fixed',
+        providerChannelId: selectedChannel?.id,
+        quality,
+        size: '1024x1024',
       })
       setActiveRunId(run.id)
-      notify({ title: '批量任务已进入本地队列', detail: `预计生成 ${expectedCount} 张候选图。`, tone: 'success' })
+      notify({ title: '批量任务已进入本地队列', detail: `预计生成 ${expectedCount} 张候选图 · ${run.provider?.channelName ?? routeCaption}`, tone: 'success' })
       navigate(`/queue?run=${encodeURIComponent(run.id)}`)
     } catch (error) {
       notify({ title: '创建批量任务失败', detail: error instanceof Error ? error.message : '本地工作流未响应', tone: 'warning' })
@@ -267,6 +284,8 @@ export function MatrixPage() {
       <section className="batch-selection-bar">
         <div className="batch-selection-copy"><small>本次批量任务</small><strong>{selectedTasks.size} 个任务 × {selectedShots.size} 种图型 × {variants} 个候选</strong><span className={selectedBlockedCount ? 'blocked-copy' : ''}>{selectedBlockedCount ? `${selectedBlockedCount} 个所选工作项资料阻塞，暂不可提交` : `预计生成 ${expectedCount} 张 · 每个工作项保留独立审核组`}</span></div>
         <label>每组候选<select value={variants} onChange={(event) => setVariants(Number(event.target.value))}><option value={1}>1 张</option><option value={2}>2 张</option><option value={4}>4 张</option></select></label>
+        <label className="provider-route-field">本批次渠道<select value={providerChoice} onChange={(event) => setProviderChoice(event.target.value)}><option value="default">工作区默认</option><option value="auto">Auto 最低价</option>{activeChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></label>
+        <label>质量<select value={quality} onChange={(event) => setQuality(event.target.value as ProviderQuality)}><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
         <label>本地并发<select value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))}><option value={1}>1</option><option value={2}>2</option><option value={4}>4</option><option value={6}>6</option></select></label>
         <button className="button dark" onClick={generate} disabled={submitting || !liveReady || expectedCount === 0}>{submitting ? <LoaderCircle size={16} className="spin" /> : <Play size={16} />}生成 {expectedCount} 张候选</button>
       </section>

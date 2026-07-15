@@ -4,12 +4,14 @@ import base64
 import binascii
 import json
 import os
+import sqlite3
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path as FileSystemPath
 from typing import Any
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Path, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .config import Settings
 from .database import Repository
+from .providers import ProviderConfigurationError, ProviderService
+from .secrets import SecretCipher
 from .workflow import (
     WorkflowConfigurationError,
     WorkflowRunner,
@@ -128,13 +132,24 @@ class GenerationRunRequest(BaseModel):
     variants: int = Field(default=4, ge=1, le=6)
     concurrency: int = Field(default=4, ge=1, le=10)
     creative_brief: GenerationCreativeBrief | None = None
+    provider_mode: Literal["default", "auto", "fixed"] = "default"
+    provider_channel_id: str | None = Field(default=None, max_length=80)
+    quality: Literal["low", "medium", "high"] = "low"
+    size: Literal["1024x1024"] = "1024x1024"
 
     @model_validator(mode="before")
     @classmethod
     def normalize_creative_brief(cls, value: Any) -> Any:
-        if isinstance(value, dict) and "creativeBrief" in value and "creative_brief" not in value:
+        if isinstance(value, dict):
             normalized = dict(value)
-            normalized["creative_brief"] = normalized.pop("creativeBrief")
+            camel_case_fields = {
+                "creativeBrief": "creative_brief",
+                "providerMode": "provider_mode",
+                "providerChannelId": "provider_channel_id",
+            }
+            for source, target in camel_case_fields.items():
+                if source in normalized and target not in normalized:
+                    normalized[target] = normalized.pop(source)
             return normalized
         return value
 
@@ -166,6 +181,140 @@ class GenerationRunRequest(BaseModel):
         if len(set(values)) != len(values):
             raise ValueError("shots cannot contain duplicates")
         return values
+
+    @model_validator(mode="after")
+    def validate_provider_selection(self) -> "GenerationRunRequest":
+        if self.provider_mode == "fixed" and not self.provider_channel_id:
+            raise ValueError("provider_channel_id is required in fixed mode")
+        return self
+
+
+class ProviderRates(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    low: float = Field(default=0, ge=0, le=1000000)
+    medium: float = Field(default=0, ge=0, le=1000000)
+    high: float = Field(default=0, ge=0, le=1000000)
+
+
+def _validate_provider_base_url(value: str) -> str:
+    cleaned = value.strip().rstrip("/")
+    parts = urlsplit(cleaned)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise ValueError("base_url must be an http(s) URL")
+    if parts.username or parts.password or parts.query or parts.fragment:
+        raise ValueError("base_url cannot contain credentials, query, or fragment")
+    return cleaned
+
+
+def _validate_provider_endpoint(value: str) -> str:
+    cleaned = value.strip()
+    if (
+        not cleaned.startswith("/")
+        or cleaned.startswith("//")
+        or "?" in cleaned
+        or "#" in cleaned
+        or "\x00" in cleaned
+        or any(segment in {".", ".."} for segment in cleaned.split("/"))
+    ):
+        raise ValueError("endpoint must be one absolute URL path")
+    return cleaned
+
+
+class ProviderChannelCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+    base_url: str = Field(min_length=8, max_length=500)
+    endpoint: str = Field(default="/images/edits", min_length=2, max_length=200)
+    api_key: str = Field(min_length=1, max_length=4096)
+    model: str = Field(default="gpt-image-2", min_length=1, max_length=120)
+    active: bool = True
+    currency: str = Field(default="CNY", pattern=r"^[A-Z]{3}$")
+    rates: ProviderRates = Field(default_factory=ProviderRates)
+
+    @field_validator("name", "model")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned or any(ord(character) < 32 or ord(character) == 127 for character in cleaned):
+            raise ValueError("value cannot be blank")
+        return cleaned
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        return _validate_provider_base_url(value)
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        return _validate_provider_endpoint(value)
+
+    @field_validator("api_key")
+    @classmethod
+    def strip_key(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("api_key cannot be blank")
+        return cleaned
+
+
+class ProviderChannelUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    base_url: str | None = Field(default=None, min_length=8, max_length=500)
+    endpoint: str | None = Field(default=None, min_length=2, max_length=200)
+    api_key: str | None = Field(default=None, min_length=1, max_length=4096)
+    model: str | None = Field(default=None, min_length=1, max_length=120)
+    active: bool | None = None
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    rates: ProviderRates | None = None
+
+    @field_validator("name", "model")
+    @classmethod
+    def strip_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned or any(ord(character) < 32 or ord(character) == 127 for character in cleaned):
+            raise ValueError("value cannot be blank")
+        return cleaned
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_optional_base_url(cls, value: str | None) -> str | None:
+        return _validate_provider_base_url(value) if value is not None else None
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_optional_endpoint(cls, value: str | None) -> str | None:
+        return _validate_provider_endpoint(value) if value is not None else None
+
+    @field_validator("api_key")
+    @classmethod
+    def strip_optional_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("api_key cannot be blank")
+        return cleaned
+
+
+class ProviderRoutingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["auto", "fixed"]
+    fixed_channel_id: str | None = Field(default=None, max_length=80)
+    currency: str = Field(default="CNY", pattern=r"^[A-Z]{3}$")
+
+    @model_validator(mode="after")
+    def validate_fixed_channel(self) -> "ProviderRoutingUpdate":
+        if self.mode == "fixed" and not self.fixed_channel_id:
+            raise ValueError("fixed_channel_id is required in fixed mode")
+        return self
 
 
 class CandidateDecision(BaseModel):
@@ -341,12 +490,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         repository = Repository(resolved_settings.database_path)
         repository.initialize()
+        secret_cipher = SecretCipher.for_database(resolved_settings.database_path)
+        provider_service = ProviderService(repository, secret_cipher)
         generation_executor = ThreadPoolExecutor(
             max_workers=2, thread_name_prefix="museforge-generation"
         )
         app.state.settings = resolved_settings
         app.state.repository = repository
-        app.state.workflow_runner = WorkflowRunner(resolved_settings)
+        app.state.provider_service = provider_service
+        app.state.workflow_runner = WorkflowRunner(
+            resolved_settings, provider_service=provider_service
+        )
         app.state.generation_executor = generation_executor
         try:
             yield
@@ -510,6 +664,75 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return current
 
+    @application.get("/api/provider-config")
+    def get_provider_config(request: Request) -> dict[str, Any]:
+        repository: Repository = request.app.state.repository
+        provider_service: ProviderService = request.app.state.provider_service
+        channels = provider_service.list_channels()
+        routing = repository.get_provider_routing()
+        active_channels = [item for item in channels if item["active"]]
+        return {
+            "channels": channels,
+            "routing": routing,
+            "summary": {
+                "channel_count": len(channels),
+                "active_channel_count": len(active_channels),
+                "priced_channel_count": sum(
+                    1
+                    for item in active_channels
+                    if item["currency"] == routing["currency"]
+                    and any(float(value) > 0 for value in item["rates"].values())
+                ),
+            },
+        }
+
+    @application.post("/api/provider-channels", status_code=201)
+    def create_provider_channel(
+        payload: ProviderChannelCreate, request: Request
+    ) -> dict[str, Any]:
+        provider_service: ProviderService = request.app.state.provider_service
+        values = payload.model_dump()
+        values["rates"] = payload.rates.model_dump()
+        try:
+            return provider_service.create_channel(values)
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="渠道名称已存在") from exc
+
+    @application.patch("/api/provider-channels/{channel_id}")
+    def update_provider_channel(
+        payload: ProviderChannelUpdate,
+        request: Request,
+        channel_id: str = Path(min_length=1, max_length=80),
+    ) -> dict[str, Any]:
+        provider_service: ProviderService = request.app.state.provider_service
+        values = payload.model_dump(exclude_unset=True, exclude_none=True)
+        if payload.rates is not None:
+            values["rates"] = payload.rates.model_dump()
+        try:
+            channel = provider_service.update_channel(channel_id, values)
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="渠道名称已存在") from exc
+        if channel is None:
+            raise HTTPException(status_code=404, detail="Provider channel not found")
+        return channel
+
+    @application.put("/api/provider-routing")
+    def update_provider_routing(
+        payload: ProviderRoutingUpdate, request: Request
+    ) -> dict[str, Any]:
+        repository: Repository = request.app.state.repository
+        if payload.fixed_channel_id:
+            channel = repository.get_provider_channel(payload.fixed_channel_id)
+            if channel is None:
+                raise HTTPException(status_code=404, detail="固定渠道不存在")
+            if not channel["active"]:
+                raise HTTPException(status_code=422, detail="固定渠道必须处于启用状态")
+        return repository.update_provider_routing(
+            mode=payload.mode,
+            fixed_channel_id=payload.fixed_channel_id,
+            currency=payload.currency,
+        )
+
     @application.post("/api/generation-runs", status_code=202)
     def create_generation_run(
         payload: GenerationRunRequest,
@@ -519,14 +742,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         require_live_generation(request)
         runner: WorkflowRunner = request.app.state.workflow_runner
         repository: Repository = request.app.state.repository
+        provider_service: ProviderService = request.app.state.provider_service
         normalized = payload.model_dump()
+        try:
+            provider_snapshot = provider_service.resolve_for_run(
+                mode=payload.provider_mode,
+                channel_id=payload.provider_channel_id,
+                quality=payload.quality,
+                size=payload.size,
+            )
+        except ProviderConfigurationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        normalized["provider"] = provider_service.public_snapshot(provider_snapshot)
         try:
             command = runner.build_command("generate", normalized)
         except WorkflowValidationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except WorkflowConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
-        run = repository.create_generation_run(request=normalized, command=command)
+        run = repository.create_generation_run(
+            request=normalized,
+            command=command,
+            provider_snapshot=provider_snapshot,
+        )
         executor: ThreadPoolExecutor = request.app.state.generation_executor
 
         def submit() -> None:
