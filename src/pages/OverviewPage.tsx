@@ -82,9 +82,9 @@ export function OverviewPage() {
           </div>
           <div className="metric-body">
             <div className="metric-value"><strong>{workspace.stats.outputs}</strong><span>张</span></div>
-            <div className="metric-product-bars" aria-label={`各商品正式输出：${productOutputBars.map((item) => `${item.name} ${item.count} 张`).join('，')}`}>
+            {workspace.stats.outputs > 0 ? <div className="metric-product-bars" aria-label={`各商品正式输出：${productOutputBars.map((item) => `${item.name} ${item.count} 张`).join('，')}`}>
               {productOutputBars.map((item) => <i key={item.id} title={`${item.name} · ${item.count} 张`} style={{ height: `${item.height}%` }} />)}
-            </div>
+            </div> : <div className="metric-empty-signal"><i /><span>等待首个正式资产</span></div>}
           </div>
           <div className="metric-footer"><span><i />覆盖 {workspace.stats.products} 个商品</span><strong>查看资产 <ArrowRight size={14} /></strong></div>
         </Link>
